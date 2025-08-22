@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "422337707120",
+    "project_id": "private-ecole-safirnadjeh",
+    "storage_bucket": "private-ecole-safirnadjeh.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:422337707120:android:54d0c61cae657ffa5e08b5",
+        "android_client_info": {
+          "package_name": "com.example.privateecole"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDEzW5VrMftPgoFREds7zdd0IBLIKcA_RU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
