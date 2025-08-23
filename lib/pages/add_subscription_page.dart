@@ -1,3 +1,4 @@
+// 📁 lib/pages/add_subscription_page.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -38,6 +39,13 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
     _subjectsFuture = FirebaseFirestore.instance.collection('subjects').get();
   }
 
+  @override
+  void dispose() {
+    _priceController.dispose();
+    _sessionsController.dispose();
+    super.dispose();
+  }
+
   String _determineStatus() {
     if (_endDate == null) {
       return 'Unknown';
@@ -65,9 +73,11 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
       );
       return;
     }
-    if (_paymentDate == null || _endDate == null || _firstLessonDate == null) {
+
+    // Check if payment date is selected, it's still a required field
+    if (_paymentDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select all required dates')),
+        const SnackBar(content: Text('Please select a payment date')),
       );
       return;
     }
@@ -75,30 +85,35 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
     final String calculatedStatus = _determineStatus();
     final bool hasExpired =
         _endDate != null ? _endDate!.isBefore(DateTime.now()) : false;
-    final bool hasPresentAfterExpired =
-        await _hasPresentAfterExpired(_selectedStudentId!, _endDate!);
+    final bool hasPresentAfterExpired = _endDate != null
+        ? await _hasPresentAfterExpired(_selectedStudentId!, _endDate!)
+        : false;
 
-    await FirebaseFirestore.instance.collection('subscriptions').add({
-      "studentId": _selectedStudentId,
-      "studentName": _selectedStudentName,
-      "price": double.tryParse(_priceController.text.trim()) ?? 0,
-      "status": calculatedStatus,
-      "groupId": _selectedGroupId,
-      "subjects": _selectedSubjects,
-      "numberOfSessions": int.tryParse(_sessionsController.text.trim()) ?? 0,
-      "paymentDate":
-          _paymentDate != null ? Timestamp.fromDate(_paymentDate!) : null,
-      "endDate": _endDate != null ? Timestamp.fromDate(_endDate!) : null,
-      "firstLessonDate": _firstLessonDate != null
-          ? Timestamp.fromDate(_firstLessonDate!)
-          : null,
-      "createdAt": Timestamp.now(),
-      "hasExpired": hasExpired, // New field
-      "hasPresentAfterExpired": hasPresentAfterExpired, // New field
-    });
-
-    if (mounted) {
-      Navigator.pop(context);
+    try {
+      await FirebaseFirestore.instance.collection('subscriptions').add({
+        "studentId": _selectedStudentId,
+        "studentName": _selectedStudentName,
+        "price": double.tryParse(_priceController.text.trim()) ?? 0,
+        "status": calculatedStatus,
+        "groupId": _selectedGroupId,
+        "subjects": _selectedSubjects,
+        "numberOfSessions": int.tryParse(_sessionsController.text.trim()) ?? 0,
+        "paymentDate": Timestamp.fromDate(_paymentDate!),
+        "endDate": _endDate != null ? Timestamp.fromDate(_endDate!) : null,
+        "firstLessonDate": _firstLessonDate != null
+            ? Timestamp.fromDate(_firstLessonDate!)
+            : null,
+        "createdAt": Timestamp.now(),
+        "hasExpired": hasExpired, // New field
+        "hasPresentAfterExpired": hasPresentAfterExpired, // New field
+      });
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save subscription: $e')),
+      );
     }
   }
 
@@ -109,7 +124,7 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
         .where('studentId', isEqualTo: studentId)
         .where('status', isEqualTo: 'Present')
         .where('date', isGreaterThan: endDate)
-        .limit(1) // We only need to find one document to confirm
+        .limit(1)
         .get();
 
     return attendanceSnapshot.docs.isNotEmpty;
@@ -402,10 +417,12 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
                 _buildDateField("Payment Date", _paymentDate,
                     (date) => setState(() => _paymentDate = date)),
                 const SizedBox(height: 16),
-                _buildDateField("End Date", _endDate,
+                _buildDateField("End Date (Optional)", _endDate,
                     (date) => setState(() => _endDate = date)),
                 const SizedBox(height: 16),
-                _buildDateField("First Lesson Date", _firstLessonDate,
+                _buildDateField(
+                    "First Lesson Date (Optional)",
+                    _firstLessonDate,
                     (date) => setState(() => _firstLessonDate = date)),
                 const SizedBox(height: 24),
                 SizedBox(

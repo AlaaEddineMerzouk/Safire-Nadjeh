@@ -1,3 +1,4 @@
+// 📁 lib/pages/edit_subscription_page.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -72,7 +73,6 @@ class _EditSubscriptionPageState extends State<EditSubscriptionPage> {
     return _selectedEndDate!.isAfter(DateTime.now()) ? 'Active' : 'Expired';
   }
 
-  // This is the new function to check for attendance after expiration
   Future<bool> _hasPresentAfterExpired(
       String studentId, DateTime endDate) async {
     final attendanceSnapshot = await FirebaseFirestore.instance
@@ -161,13 +161,22 @@ class _EditSubscriptionPageState extends State<EditSubscriptionPage> {
         return;
       }
 
+      // Check if payment date is selected, it's still a required field
+      if (_selectedPaymentDate == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select a payment date')),
+        );
+        return;
+      }
+
       try {
-        // Calculate the new fields based on the selected end date
         final bool hasExpired = _selectedEndDate != null
             ? _selectedEndDate!.isBefore(DateTime.now())
             : false;
-        final bool hasPresentAfterExpired = await _hasPresentAfterExpired(
-            widget.subscriptionData['studentId'], _selectedEndDate!);
+        final bool hasPresentAfterExpired = _selectedEndDate != null
+            ? await _hasPresentAfterExpired(
+                widget.subscriptionData['studentId'], _selectedEndDate!)
+            : false;
 
         final updatedData = {
           'studentName': _studentNameController.text.trim(),
@@ -176,9 +185,7 @@ class _EditSubscriptionPageState extends State<EditSubscriptionPage> {
           'numberOfSessions': int.tryParse(_sessionsController.text) ?? 0,
           'subjects': _selectedSubjects,
           'status': _determineStatus(),
-          'paymentDate': _selectedPaymentDate != null
-              ? Timestamp.fromDate(_selectedPaymentDate!)
-              : null,
+          'paymentDate': Timestamp.fromDate(_selectedPaymentDate!),
           'endDate': _selectedEndDate != null
               ? Timestamp.fromDate(_selectedEndDate!)
               : null,
@@ -280,7 +287,8 @@ class _EditSubscriptionPageState extends State<EditSubscriptionPage> {
 
                     final groups = snapshot.data!.docs;
                     final groupIds = groups.map((doc) => doc.id).toList();
-                    if (!groupIds.contains(_selectedGroupId)) {
+                    if (_selectedGroupId != null &&
+                        !groupIds.contains(_selectedGroupId)) {
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         setState(() {
                           _selectedGroupId = null;
@@ -400,10 +408,12 @@ class _EditSubscriptionPageState extends State<EditSubscriptionPage> {
                 _buildDateField("Payment Date", _selectedPaymentDate,
                     (date) => setState(() => _selectedPaymentDate = date)),
                 const SizedBox(height: 16),
-                _buildDateField("End Date", _selectedEndDate,
+                _buildDateField("End Date (Optional)", _selectedEndDate,
                     (date) => setState(() => _selectedEndDate = date)),
                 const SizedBox(height: 16),
-                _buildDateField("First Lesson Date", _selectedFirstLessonDate,
+                _buildDateField(
+                    "First Lesson Date (Optional)",
+                    _selectedFirstLessonDate,
                     (date) => setState(() => _selectedFirstLessonDate = date)),
                 const SizedBox(height: 24),
                 SizedBox(

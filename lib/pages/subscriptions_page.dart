@@ -6,6 +6,8 @@ import 'package:privateecole/widgets/subscription_card.dart';
 import 'package:privateecole/widgets/subscription_filter_bar.dart';
 import 'package:privateecole/pages/add_subscription_page.dart';
 import 'package:privateecole/pages/edit_subscription_page.dart';
+import 'package:privateecole/pages/renew_subscription_page.dart';
+import 'package:privateecole/pages/subscription_history_page.dart'; // Import the new page
 
 class SubscriptionsPage extends StatefulWidget {
   const SubscriptionsPage({Key? key}) : super(key: key);
@@ -36,7 +38,6 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
       groups[doc.id] = doc.data()['groupName'] as String;
     }
 
-    // The fix: check if the widget is still in the tree before setting state
     if (mounted) {
       setState(() {
         _groupsMap = groups;
@@ -44,7 +45,6 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
     }
   }
 
-  // This is the new function to check for attendance after expiration
   Future<bool> _hasPresentAfterExpired(
       String studentId, DateTime endDate) async {
     final attendanceSnapshot = await FirebaseFirestore.instance
@@ -52,7 +52,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
         .where('studentId', isEqualTo: studentId)
         .where('status', isEqualTo: 'Present')
         .where('date', isGreaterThan: endDate)
-        .limit(1) // We only need to find one document to confirm
+        .limit(1)
         .get();
 
     return attendanceSnapshot.docs.isNotEmpty;
@@ -220,7 +220,12 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
                         ? endDate.isBefore(DateTime.now())
                         : false;
 
-                    // Use a FutureBuilder to handle the async check
+                    // Check if subscription is expiring soon (within 7 days)
+                    final isExpiringSoon = endDate != null
+                        ? endDate.difference(DateTime.now()).inDays <= 7 &&
+                            endDate.difference(DateTime.now()).inDays >= 0
+                        : false;
+
                     return FutureBuilder<bool>(
                       future: hasExpired
                           ? _hasPresentAfterExpired(data['studentId'], endDate!)
@@ -238,6 +243,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
                           group: _groupsMap[data['groupId']] ?? 'N/A',
                           hasExpired: hasExpired,
                           hasPresentAfterExpired: hasPresentAfterExpired,
+                          isExpiringSoon: isExpiringSoon,
                           onEdit: () {
                             Navigator.push(
                               context,
@@ -251,6 +257,29 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
                           },
                           onDelete: () {
                             _showDeleteConfirmation(context, sub.id);
+                          },
+                          onRenew: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => RenewSubscriptionPage(
+                                  subscriptionData: data,
+                                  docId: sub.id,
+                                ),
+                              ),
+                            );
+                          },
+                          // Add the onTap handler to navigate to the history page
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => SubscriptionHistoryPage(
+                                  subscriptionDocId: sub.id,
+                                  studentName: data['studentName'] ?? 'N/A',
+                                ),
+                              ),
+                            );
                           },
                         );
                       },
