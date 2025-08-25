@@ -1,424 +1,362 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:fl_chart/fl_chart.dart';
-import 'package:intl/intl.dart';
 
-// A simple utility class for consistent colors
+// --- Placeholder for AppColors to make the file runnable as a standalone example ---
 class AppColors {
-  static const Color primaryBlue = Color(0xFF2196F3);
+  static const Color primaryBlue = Color(0xFF1E88E5);
+  static const Color primaryOrange = Color(0xFFFF8A00);
+  static const Color purple = Color(0xFF7C4DFF);
+  static const Color red = Colors.redAccent;
   static const Color green = Color(0xFF4CAF50);
-  static const Color red = Color(0xFFF44336);
-  static const Color primaryOrange = Color(0xFFFF9800);
-  static const Color lightGray = Color(0xFFF5F5F5);
-  static const Color darkGray = Color(0xFF9E9E9E);
-  static const Color purple = Color(0xFF9C27B0);
+  static const Color background = Color(0xFFF0F4F8);
+  static const Color backgroundLight = Colors.white;
+  static const Color textPrimary = Color(0xFF2C3E50);
+  static const Color textSecondary = Color(0xFF7F8C8D);
+  static const Color textOnPrimary = Colors.white;
+  static const Color orange = Colors.deepOrange;
 }
+// ----------------------------------------------------------------------------------
 
-// ===== STATISTICS PAGE WIDGET =====
-class StatisticsPage extends StatefulWidget {
-  const StatisticsPage({super.key});
+class StatisticsPage extends StatelessWidget {
+  const StatisticsPage({Key? key}) : super(key: key);
 
-  @override
-  State<StatisticsPage> createState() => _StatisticsPageState();
-}
+  // Asynchronous function to calculate total revenue from subscriptions and renewals
+  Future<double> _calculateTotalRevenue() async {
+    double totalRevenue = 0.0;
+    try {
+      final subscriptionsSnapshot =
+          await FirebaseFirestore.instance.collection('subscriptions').get();
 
-class _StatisticsPageState extends State<StatisticsPage> {
-  late Future<Map<String, dynamic>> _statisticsDataFuture;
+      final renewalFutures = <Future<double>>[];
 
-  @override
-  void initState() {
-    super.initState();
-    _statisticsDataFuture = _fetchStatisticsData();
+      for (var subscriptionDoc in subscriptionsSnapshot.docs) {
+        final data = subscriptionDoc.data();
+        if (data.containsKey('price')) {
+          totalRevenue += (data['price'] as num).toDouble();
+        }
+
+        renewalFutures.add(
+          FirebaseFirestore.instance
+              .collection('subscriptions')
+              .doc(subscriptionDoc.id)
+              .collection('renewals')
+              .get()
+              .then((renewalsSnapshot) {
+            double renewalPriceSum = 0.0;
+            for (var renewalDoc in renewalsSnapshot.docs) {
+              final renewalData = renewalDoc.data();
+              if (renewalData.containsKey('price')) {
+                renewalPriceSum += (renewalData['price'] as num).toDouble();
+              }
+            }
+            return renewalPriceSum;
+          }),
+        );
+      }
+
+      final renewalTotals = await Future.wait(renewalFutures);
+      for (var total in renewalTotals) {
+        totalRevenue += total;
+      }
+    } catch (e) {
+      print("Error fetching total revenue: $e");
+    }
+    return totalRevenue;
   }
 
-  // Helper method to get the start and end of a given month
-  Map<String, DateTime> _getMonthDates(int monthOffset) {
-    final now = DateTime.now();
-    final date = DateTime(now.year, now.month + monthOffset, 1);
-    final start = DateTime(date.year, date.month, 1);
-    final end = DateTime(date.year, date.month + 1, 0, 23, 59, 59);
-    return {'start': start, 'end': end};
+  // Asynchronous function to calculate total earnings from teachers
+  Future<double> _calculateTotalTeacherEarnings() async {
+    double totalTeacherEarnings = 0.0;
+    try {
+      final paymentsSnapshot =
+          await FirebaseFirestore.instance.collection('teacher_payments').get();
+
+      for (var paymentDoc in paymentsSnapshot.docs) {
+        final data = paymentDoc.data();
+        if (data.containsKey('amount')) {
+          totalTeacherEarnings += (data['amount'] as num).toDouble();
+        }
+      }
+    } catch (e) {
+      print("Error fetching total teacher earnings: $e");
+    }
+    return totalTeacherEarnings;
   }
 
-  Future<Map<String, dynamic>> _fetchStatisticsData() async {
-    final now = DateTime.now();
-    final startOfMonth = DateTime(now.year, now.month, 1);
-    final endOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
-
-    // Get the current month's totals
-    final currentMonthFeesQuery = FirebaseFirestore.instance
-        .collection('subscriptions')
-        .where('paymentDate', isGreaterThanOrEqualTo: startOfMonth)
-        .where('paymentDate', isLessThanOrEqualTo: endOfMonth)
-        .get();
-
-    final currentMonthExpensesQuery = FirebaseFirestore.instance
-        .collection('expenses')
-        .where('date', isGreaterThanOrEqualTo: startOfMonth)
-        .where('date', isLessThanOrEqualTo: endOfMonth)
-        .get();
-
-    final teachersQuery =
-        FirebaseFirestore.instance.collection('teachers').get();
-
-    // Get subscription status counts
-    final activeCountFuture = FirebaseFirestore.instance
-        .collection('subscriptions')
-        .where('status', isEqualTo: 'Active')
-        .count()
-        .get();
-    final expiredCountFuture = FirebaseFirestore.instance
-        .collection('subscriptions')
-        .where('status', isEqualTo: 'Expired')
-        .count()
-        .get();
-    final unknownCountFuture = FirebaseFirestore.instance
-        .collection('subscriptions')
-        .where('status', isEqualTo: 'Unknown')
-        .count()
-        .get();
-
-    // NEW: Get the most absent students for the current month
-    final attendanceQuery = await FirebaseFirestore.instance
-        .collection('attendance')
-        .where('date', isGreaterThanOrEqualTo: startOfMonth)
-        .where('date', isLessThanOrEqualTo: endOfMonth)
-        .where('status', isEqualTo: 'Absent')
-        .get();
-
-    Map<String, int> absentCounts = {};
-    for (var doc in attendanceQuery.docs) {
-      final data = doc.data();
-      final studentName = data['studentName'];
-      absentCounts[studentName] = (absentCounts[studentName] ?? 0) + 1;
-    }
-
-    final topAbsentStudents = absentCounts.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    // Create the final list of absent students with their names and counts
-    List<Map<String, dynamic>> mostAbsentStudents = [];
-    for (var entry in topAbsentStudents.take(5)) {
-      mostAbsentStudents.add({
-        'name': entry.key,
-        'absences': entry.value,
-      });
-    }
-
-    // Get historical data for the last 12 months
-    Map<String, double> monthlyFees = {};
-    Map<String, double> monthlyExpenses = {};
-    Map<String, double> monthlyTeacherEarnings = {};
-    Map<String, double> monthlyNetRevenue = {};
-
-    for (int i = 11; i >= 0; i--) {
-      final monthDates = _getMonthDates(-i);
-      final monthName = DateFormat.MMM().format(monthDates['start']!);
-
-      final feesSnapshot = await FirebaseFirestore.instance
-          .collection('subscriptions')
-          .where('paymentDate', isGreaterThanOrEqualTo: monthDates['start'])
-          .where('paymentDate', isLessThanOrEqualTo: monthDates['end'])
-          .get();
+  // UPDATED: Asynchronous function to calculate total expenses.
+  // Now counts all expenses with a 'Paid' status, regardless of their archived state.
+  Future<double> _calculateTotalExpenses() async {
+    double totalExpenses = 0.0;
+    try {
       final expensesSnapshot = await FirebaseFirestore.instance
           .collection('expenses')
-          .where('date', isGreaterThanOrEqualTo: monthDates['start'])
-          .where('date', isLessThanOrEqualTo: monthDates['end'])
-          .get();
-      final teachersSnapshot = await FirebaseFirestore.instance
-          .collection('teachers')
-          .where('totalSessions',
-              isGreaterThan: 0) // Example to filter for relevant teachers
+          .where('status',
+              isEqualTo: 'Paid') // Now only filters by 'Paid' status
           .get();
 
-      double fees = feesSnapshot.docs.fold(
-          0.0,
-          (sum, doc) =>
-              sum +
-              ((doc.data() as Map<String, dynamic>?)?['price'] as num? ?? 0.0));
-      double expense = expensesSnapshot.docs.fold(
-          0.0,
-          (sum, doc) =>
-              sum +
-              ((doc.data() as Map<String, dynamic>?)?['amount'] as num? ??
-                  0.0));
-      double teacherEarnings = teachersSnapshot.docs.fold(
-          0.0,
-          (sum, doc) =>
-              sum +
-              ((doc.data() as Map<String, dynamic>?)?['totalEarnings']
-                      as num? ??
-                  0.0));
-
-      monthlyFees[monthName] = fees;
-      monthlyExpenses[monthName] = expense;
-      monthlyTeacherEarnings[monthName] = teacherEarnings;
-      monthlyNetRevenue[monthName] = fees - expense - teacherEarnings;
+      for (var expenseDoc in expensesSnapshot.docs) {
+        final data = expenseDoc.data();
+        if (data.containsKey('amount')) {
+          totalExpenses += (data['amount'] as num).toDouble();
+        }
+      }
+    } catch (e) {
+      print("Error fetching total expenses: $e");
     }
-
-    final results = await Future.wait([
-      currentMonthFeesQuery,
-      currentMonthExpensesQuery,
-      teachersQuery,
-      activeCountFuture,
-      expiredCountFuture,
-      unknownCountFuture,
-    ]);
-
-    final currentFeesDocs = (results[0] as QuerySnapshot).docs;
-    final currentExpensesDocs = (results[1] as QuerySnapshot).docs;
-    final teachersDocs = (results[2] as QuerySnapshot).docs;
-
-    double currentMonthFees = currentFeesDocs.fold(
-        0.0,
-        (sum, doc) =>
-            sum +
-            ((doc.data() as Map<String, dynamic>?)?['price'] as num? ?? 0.0));
-    double currentMonthExpenses = currentExpensesDocs.fold(
-        0.0,
-        (sum, doc) =>
-            sum +
-            ((doc.data() as Map<String, dynamic>?)?['amount'] as num? ?? 0.0));
-    double totalTeacherEarnings = teachersDocs.fold(
-        0.0,
-        (sum, doc) =>
-            sum +
-            ((doc.data() as Map<String, dynamic>?)?['totalEarnings'] as num? ??
-                0.0));
-
-    double currentMonthNetRevenue =
-        currentMonthFees - currentMonthExpenses - totalTeacherEarnings;
-
-    final activeCount = (results[3] as AggregateQuerySnapshot).count ?? 0;
-    final expiredCount = (results[4] as AggregateQuerySnapshot).count ?? 0;
-    final unknownCount = (results[5] as AggregateQuerySnapshot).count ?? 0;
-
-    return {
-      'currentMonthFees': currentMonthFees,
-      'currentMonthExpenses': currentMonthExpenses,
-      'totalTeacherEarnings': totalTeacherEarnings,
-      'currentMonthNetRevenue': currentMonthNetRevenue,
-      'monthlyFees': monthlyFees,
-      'monthlyExpenses': monthlyExpenses,
-      'monthlyTeacherEarnings': monthlyTeacherEarnings,
-      'monthlyNetRevenue': monthlyNetRevenue,
-      'subscriptionStatuses': {
-        'Active': activeCount,
-        'Expired': expiredCount,
-        'Unknown': unknownCount,
-      },
-      'mostAbsentStudents': mostAbsentStudents,
-    };
+    return totalExpenses;
   }
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: FutureBuilder<Map<String, dynamic>>(
-          future: _statisticsDataFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            } else if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
-            } else if (!snapshot.hasData || snapshot.data == null) {
-              return const Center(child: Text('No data found.'));
-            } else {
-              final data = snapshot.data!;
-              final monthlyFees = data['monthlyFees'] as Map<String, double>;
-              final monthlyExpenses =
-                  data['monthlyExpenses'] as Map<String, double>;
-              final monthlyTeacherEarnings =
-                  data['monthlyTeacherEarnings'] as Map<String, double>;
-              final monthlyNetRevenue =
-                  data['monthlyNetRevenue'] as Map<String, double>;
-              final subscriptionStatuses =
-                  data['subscriptionStatuses'] as Map<String, int>;
-              final mostAbsentStudents =
-                  data['mostAbsentStudents'] as List<Map<String, dynamic>>;
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // --- Page Header ---
+              const _PageHeader(
+                title: 'Membership Statistics',
+                subtitle:
+                    'A concise and scalable overview of your subscriptions.',
+              ),
+              const SizedBox(height: 24.0),
 
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const _SectionHeader(
-                    title: 'Statistics & Analytics',
-                    subtitle: 'Detailed financial and academic insights',
-                  ),
-                  const SizedBox(height: 16),
+              // --- Subscription Status Section ---
+              const _SectionTitle(title: 'Live Subscription Status'),
+              const SizedBox(height: 16.0),
 
-                  // Current Month Financial Overview
-                  _SectionHeader(
-                    title: 'Financial Overview',
-                    subtitle:
-                        'Current Month: ${DateFormat.MMMM().format(DateTime.now())}',
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
+              // Single StreamBuilder to listen for all data from Firestore
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('subscriptions')
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return const Center(child: Text('Something went wrong'));
+                  }
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return const Center(
+                        child: Text('No subscription data found.'));
+                  }
+
+                  final documents = snapshot.data!.docs;
+                  int activeCount = 0;
+                  int expiredCount = 0;
+                  int unknownCount = 0;
+                  final int totalMembers = documents.length;
+
+                  for (var doc in documents) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    switch (data['status']) {
+                      case 'Active':
+                        activeCount++;
+                        break;
+                      case 'Expired':
+                        expiredCount++;
+                        break;
+                      case 'Unknown':
+                        unknownCount++;
+                        break;
+                      default:
+                        break;
+                    }
+                  }
+
+                  return Column(
                     children: [
-                      Expanded(
-                        child: _CurrentMonthStatCard(
-                          title: 'Total Revenue',
-                          value:
-                              '${data['currentMonthFees'].toStringAsFixed(2)} DZD',
-                          icon: Icons.paid_rounded,
-                          color: AppColors.primaryBlue,
+                      SizedBox(
+                        height: 100,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: _CompactMetricCard(
+                                title: 'Total Members',
+                                value: totalMembers.toString(),
+                                icon: Icons.group_rounded,
+                                color: AppColors.primaryBlue,
+                              ),
+                            ),
+                            const SizedBox(width: 12.0),
+                            Expanded(
+                              child: _CompactMetricCard(
+                                title: 'Active',
+                                value: activeCount.toString(),
+                                icon: Icons.check_circle_outline_rounded,
+                                color: AppColors.green,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _CurrentMonthStatCard(
-                          title: 'Total Expenses',
-                          value:
-                              '${data['currentMonthExpenses'].toStringAsFixed(2)} DZD',
-                          icon: Icons.money_off_rounded,
-                          color: AppColors.red,
+                      const SizedBox(height: 16.0),
+                      SizedBox(
+                        height: 100,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: _CompactMetricCard(
+                                title: 'Expired',
+                                value: expiredCount.toString(),
+                                icon: Icons.cancel_outlined,
+                                color: AppColors.red,
+                              ),
+                            ),
+                            const SizedBox(width: 12.0),
+                            Expanded(
+                              child: _CompactMetricCard(
+                                title: 'Unknown',
+                                value: unknownCount.toString(),
+                                icon: Icons.help_outline_rounded,
+                                color: AppColors.purple,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 16),
-                  _CurrentMonthStatCard(
-                    title: 'Total Teacher Earnings',
-                    value:
-                        '${data['totalTeacherEarnings'].toStringAsFixed(2)} DZD',
-                    icon: Icons.school_rounded,
-                    color: AppColors.primaryOrange,
-                  ),
-                  const SizedBox(height: 16),
-                  _CurrentMonthStatCard(
-                    title: 'Net Revenue',
-                    value:
-                        '${data['currentMonthNetRevenue'].toStringAsFixed(2)} DZD',
-                    icon: Icons.show_chart_rounded,
-                    color: AppColors.purple,
-                  ),
+                  );
+                },
+              ),
+              const SizedBox(height: 24.0),
 
-                  const SizedBox(height: 24),
+              // --- Financial Overview Section ---
+              const _SectionTitle(title: 'Financial Overview'),
+              const SizedBox(height: 16.0),
 
-                  // Historical Financial Chart
-                  _FinancialChartCard(
-                    title: 'Monthly Financials (Last 12 Months)',
-                    feesData: monthlyFees,
-                    expensesData: monthlyExpenses,
-                    teacherEarningsData: monthlyTeacherEarnings,
-                    netRevenueData: monthlyNetRevenue,
-                  ),
+              // Use a single FutureBuilder to get all three financial metrics concurrently
+              FutureBuilder<List<double>>(
+                future: Future.wait([
+                  _calculateTotalRevenue(),
+                  _calculateTotalTeacherEarnings(),
+                  _calculateTotalExpenses(),
+                ]),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    print(snapshot.error);
+                    return const _CompactMetricCard(
+                      title: 'Data Error',
+                      value: 'Error',
+                      icon: Icons.error_outline,
+                      color: AppColors.red,
+                    );
+                  }
 
-                  const SizedBox(height: 24),
+                  final totalRevenue = snapshot.data![0];
+                  final totalTeacherEarnings = snapshot.data![1];
+                  final totalExpenses = snapshot.data![2];
 
-                  // Student Analytics Section
-                  const _SectionHeader(
-                    title: 'Student Analytics',
-                    subtitle: 'Subscription & attendance overview',
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  final netProfit =
+                      totalRevenue - totalTeacherEarnings - totalExpenses;
+
+                  return Column(
                     children: [
-                      Expanded(
-                        child: _SubscriptionStatusCard(
-                          title: 'Subscription Status',
-                          statusData: subscriptionStatuses,
-                        ),
+                      // Card for Total Revenue
+                      _CompactMetricCard(
+                        title: 'Total Revenue',
+                        value: '\$ ${totalRevenue.toStringAsFixed(2)}',
+                        icon: Icons.monetization_on_rounded,
+                        color: AppColors.primaryOrange,
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _MostAbsentStudentsCard(
-                          title: 'Most Absents this Month',
-                          absentStudents: mostAbsentStudents,
-                        ),
+                      const SizedBox(height: 16.0),
+
+                      // Card for Total Expenses
+                      _CompactMetricCard(
+                        title: 'Total Expenses',
+                        value: '\$ ${totalExpenses.toStringAsFixed(2)}',
+                        icon: Icons.payment_rounded,
+                        color: AppColors.red,
                       ),
+                      const SizedBox(height: 16.0),
+                      // Card for Total Earnings Paid to Teachers
+                      _CompactMetricCard(
+                        title: 'Total Earnings Paid to Teachers',
+                        value: '\$ ${totalTeacherEarnings.toStringAsFixed(2)}',
+                        icon: Icons.attach_money_rounded,
+                        color: AppColors.purple,
+                      ),
+
+                      // Card for Net Profit
+                      _CompactMetricCard(
+                        title: 'Net Profit',
+                        value: '\$ ${netProfit.toStringAsFixed(2)}',
+                        icon: Icons.account_balance_wallet_rounded,
+                        color: AppColors.green,
+                      ),
+                      const SizedBox(height: 16.0),
                     ],
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              );
-            }
-          },
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// Reusable header widget
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title, this.subtitle});
-  final String title;
-  final String? subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title,
-            style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5)),
-        if (subtitle != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              subtitle!,
-              style: TextStyle(color: Colors.grey[700], fontSize: 14),
-            ),
-          ),
-      ]),
-    );
-  }
-}
-
-// Reusable card for a single current month stat
-class _CurrentMonthStatCard extends StatelessWidget {
+// A new, very compact card with a professional, minimalist look
+class _CompactMetricCard extends StatelessWidget {
   final String title;
   final String value;
   final IconData icon;
   final Color color;
 
-  const _CurrentMonthStatCard({
+  const _CompactMetricCard({
+    Key? key,
     required this.title,
     required this.value,
     required this.icon,
     required this.color,
-  });
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Card(
       elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Row(
-              children: [
-                Icon(icon, color: color, size: 28),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
+            Icon(icon, color: color, size: 28),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
                     title,
                     style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black87,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
+                ],
               ),
             ),
           ],
@@ -428,291 +366,60 @@ class _CurrentMonthStatCard extends StatelessWidget {
   }
 }
 
-// Reusable card for financial charts
-class _FinancialChartCard extends StatelessWidget {
+// Reusable widget for the page header
+class _PageHeader extends StatelessWidget {
   final String title;
-  final Map<String, double> feesData;
-  final Map<String, double> expensesData;
-  final Map<String, double> teacherEarningsData;
-  final Map<String, double> netRevenueData;
+  final String subtitle;
 
-  const _FinancialChartCard({
+  const _PageHeader({
+    Key? key,
     required this.title,
-    required this.feesData,
-    required this.expensesData,
-    required this.teacherEarningsData,
-    required this.netRevenueData,
-  });
+    required this.subtitle,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    List<Color> colors = [
-      AppColors.primaryBlue,
-      AppColors.red,
-      AppColors.primaryOrange,
-      AppColors.purple
-    ];
-
-    List<LineChartBarData> lineBarsData = [
-      LineChartBarData(
-        spots: feesData.entries
-            .map((e) => FlSpot(
-                feesData.keys.toList().indexOf(e.key).toDouble(), e.value))
-            .toList(),
-        isCurved: true,
-        color: colors[0],
-        barWidth: 3,
-        dotData: const FlDotData(show: false),
-      ),
-      LineChartBarData(
-        spots: expensesData.entries
-            .map((e) => FlSpot(
-                expensesData.keys.toList().indexOf(e.key).toDouble(), e.value))
-            .toList(),
-        isCurved: true,
-        color: colors[1],
-        barWidth: 3,
-        dotData: const FlDotData(show: false),
-      ),
-      LineChartBarData(
-        spots: teacherEarningsData.entries
-            .map((e) => FlSpot(
-                teacherEarningsData.keys.toList().indexOf(e.key).toDouble(),
-                e.value))
-            .toList(),
-        isCurved: true,
-        color: colors[2],
-        barWidth: 3,
-        dotData: const FlDotData(show: false),
-      ),
-      LineChartBarData(
-        spots: netRevenueData.entries
-            .map((e) => FlSpot(
-                netRevenueData.keys.toList().indexOf(e.key).toDouble(),
-                e.value))
-            .toList(),
-        isCurved: true,
-        color: colors[3],
-        barWidth: 3,
-        dotData: const FlDotData(show: false),
-      ),
-    ];
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 250,
-              child: LineChart(
-                LineChartData(
-                  minY: 0,
-                  titlesData: FlTitlesData(
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 30,
-                        getTitlesWidget: (value, meta) {
-                          final label = feesData.keys.toList()[value.toInt()];
-                          return SideTitleWidget(
-                            axisSide: meta.axisSide,
-                            child: Text(label,
-                                style: const TextStyle(fontSize: 12)),
-                          );
-                        },
-                      ),
-                    ),
-                    leftTitles: const AxisTitles(
-                      sideTitles:
-                          SideTitles(showTitles: true, reservedSize: 40),
-                    ),
-                    topTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                  ),
-                  lineBarsData: lineBarsData,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 16,
-              children: [
-                _ChartLegend(color: colors[0], label: 'Revenue'),
-                _ChartLegend(color: colors[1], label: 'Expenses'),
-                _ChartLegend(color: colors[2], label: 'Teacher Earnings'),
-                _ChartLegend(color: colors[3], label: 'Net Revenue'),
-              ],
-            )
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// Widget for chart legend
-class _ChartLegend extends StatelessWidget {
-  final Color color;
-  final String label;
-
-  const _ChartLegend({
-    required this.color,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(2),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+            color: AppColors.textPrimary,
           ),
         ),
-        const SizedBox(width: 6),
-        Text(label, style: const TextStyle(fontSize: 14)),
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          style: const TextStyle(
+            fontSize: 15,
+            color: AppColors.textSecondary,
+          ),
+        ),
       ],
     );
   }
 }
 
-// Subscription Status Card
-class _SubscriptionStatusCard extends StatelessWidget {
+// Reusable widget for section titles
+class _SectionTitle extends StatelessWidget {
   final String title;
-  final Map<String, int> statusData;
 
-  const _SubscriptionStatusCard({
+  const _SectionTitle({
+    Key? key,
     required this.title,
-    required this.statusData,
-  });
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final List<Color> colors = [
-      AppColors.green,
-      AppColors.red,
-      AppColors.darkGray
-    ];
-    final List<IconData> icons = [
-      Icons.check_circle_rounded,
-      Icons.cancel_rounded,
-      Icons.help_outline_rounded
-    ];
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            const SizedBox(height: 20),
-            ...statusData.keys.map((key) {
-              final index = statusData.keys.toList().indexOf(key);
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Row(
-                  children: [
-                    Icon(icons[index], color: colors[index], size: 20),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        key,
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w500),
-                      ),
-                    ),
-                    Text(
-                      statusData[key].toString(),
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// NEW WIDGET for Most Absent Students
-class _MostAbsentStudentsCard extends StatelessWidget {
-  final String title;
-  final List<Map<String, dynamic>> absentStudents;
-
-  const _MostAbsentStudentsCard({
-    required this.title,
-    required this.absentStudents,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title,
-                style:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            const SizedBox(height: 12),
-            if (absentStudents.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16.0),
-                child: Center(
-                  child: Text(
-                    'No absences recorded this month.',
-                    style: TextStyle(color: AppColors.darkGray),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              )
-            else
-              ...absentStudents.map((student) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.person, color: AppColors.red, size: 20),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          student['name'],
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w500),
-                        ),
-                      ),
-                      Text(
-                        '${student['absences']}',
-                        style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.red),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-          ],
-        ),
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 20,
+        fontWeight: FontWeight.bold,
+        color: AppColors.textPrimary,
       ),
     );
   }

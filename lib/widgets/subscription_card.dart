@@ -15,9 +15,9 @@ class SubscriptionCard extends StatelessWidget {
   // New fields to be passed from the parent widget
   final bool hasExpired;
   final bool hasPresentAfterExpired;
-  final bool isExpiringSoon; // New field to show renew button
-  final VoidCallback onRenew; // New callback for the renew button
-  final VoidCallback onTap; // New callback for tapping the entire card
+  final bool isExpiringSoon;
+  final VoidCallback? onRenew; // Made optional
+  final VoidCallback onTap;
 
   const SubscriptionCard({
     Key? key,
@@ -31,9 +31,9 @@ class SubscriptionCard extends StatelessWidget {
     required this.onDelete,
     required this.hasExpired,
     required this.hasPresentAfterExpired,
-    required this.isExpiringSoon, // Now required
-    required this.onRenew, // Now required
-    required this.onTap, // Now required
+    required this.isExpiringSoon,
+    this.onRenew, // No longer required
+    required this.onTap,
   }) : super(key: key);
 
   @override
@@ -42,7 +42,7 @@ class SubscriptionCard extends StatelessWidget {
     final statusColor = status == 'Active' ? AppColors.green : AppColors.red;
 
     return InkWell(
-      onTap: onTap, // Call the onTap callback when the card is tapped
+      onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Card(
         color: AppColors.cardBackground,
@@ -143,8 +143,8 @@ class SubscriptionCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  // Conditionally show the Renew button
-                  if (hasExpired || isExpiringSoon)
+                  // Conditionally show the Renew button only if onRenew is not null
+                  if (onRenew != null)
                     IconButton(
                       icon: const Icon(Icons.autorenew, color: AppColors.green),
                       onPressed: onRenew,

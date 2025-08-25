@@ -116,6 +116,8 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                     final paymentDate =
                         (data['paymentDate'] as Timestamp?)?.toDate();
                     final endDate = (data['endDate'] as Timestamp?)?.toDate();
+                    final firstLessonDate =
+                        (data['firstLessonDate'] as Timestamp?)?.toDate();
 
                     String statusText;
                     Color statusColor;
@@ -195,16 +197,19 @@ class _SubscriptionHistoryPageState extends State<SubscriptionHistoryPage> {
                                   '${data['price']?.toStringAsFixed(2) ?? 'N/A'} DZD',
                             ),
                             _buildInfoRow(
-                              icon: Icons.access_time_outlined,
-                              label: 'Sessions',
-                              value: '${data['numberOfSessions'] ?? 'N/A'}',
-                            ),
-                            _buildInfoRow(
                               icon: Icons.event,
                               label: 'Payment Date',
                               value: paymentDate != null
                                   ? DateFormat('dd MMM yyyy')
                                       .format(paymentDate)
+                                  : 'N/A',
+                            ),
+                            _buildInfoRow(
+                              icon: Icons.event_note,
+                              label: 'First Lesson Date',
+                              value: firstLessonDate != null
+                                  ? DateFormat('dd MMM yyyy')
+                                      .format(firstLessonDate)
                                   : 'N/A',
                             ),
                             _buildInfoRow(

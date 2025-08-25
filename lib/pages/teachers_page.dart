@@ -1,3 +1,4 @@
+// 📁 lib/pages/teachers_page.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/app_colors.dart';
@@ -5,6 +6,7 @@ import '../widgets/teacher_filter_bar.dart';
 import '../widgets/teacher_card.dart';
 import 'add_teacher_page.dart';
 import 'edit_teacher_page.dart';
+import 'teacher_payment_history_page.dart';
 
 class TeachersPage extends StatefulWidget {
   const TeachersPage({Key? key}) : super(key: key);
@@ -34,8 +36,102 @@ class _TeachersPageState extends State<TeachersPage> {
     return query.snapshots();
   }
 
+  void _recordPayment(String docId, Map<String, dynamic> teacherData) async {
+    final double totalEarnings =
+        (teacherData['totalEarnings'] as num?)?.toDouble() ?? 0.0;
+    final int totalSessions = teacherData['totalSessions'] ?? 0;
+
+    if (totalEarnings == 0.0 && totalSessions == 0) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('No earnings or sessions to pay.'),
+              backgroundColor: AppColors.red),
+        );
+      }
+      return;
+    }
+
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      final paymentRef =
+          FirebaseFirestore.instance.collection('teacher_payments').doc();
+      batch.set(paymentRef, {
+        'teacherId': docId,
+        'fullName': teacherData['fullName'],
+        'amount': totalEarnings,
+        'sessionsPaid': totalSessions,
+        'paymentDate': FieldValue.serverTimestamp(),
+      });
+
+      final teacherRef =
+          FirebaseFirestore.instance.collection('teachers').doc(docId);
+      batch.update(teacherRef, {
+        'totalEarnings': 0,
+        'totalSessions': 0,
+      });
+
+      await batch.commit();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Payment recorded successfully!'),
+              backgroundColor: AppColors.green),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Failed to record payment: $e'),
+              backgroundColor: AppColors.red),
+        );
+      }
+    }
+  }
+
+  void _showPayConfirmation(
+      BuildContext context, String docId, Map<String, dynamic> teacherData) {
+    final double totalEarnings =
+        (teacherData['totalEarnings'] as num?)?.toDouble() ?? 0.0;
+    final int totalSessions = teacherData['totalSessions'] ?? 0;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: AppColors.cardBackground,
+          title: const Text('Confirm Payment',
+              style: TextStyle(color: AppColors.textPrimary)),
+          content: Text(
+            'Are you sure you want to pay ${teacherData['fullName']} for $totalSessions sessions, totaling \$${totalEarnings.toStringAsFixed(2)}?',
+            style: const TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                _recordPayment(docId, teacherData);
+                Navigator.of(dialogContext).pop();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.green,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Confirm'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _recordSession(String docId, Map<String, dynamic> teacherData) async {
-    // Correctly handle type casting for Firestore data
     final double sessionPrice =
         (teacherData['sessionPrice'] as num?)?.toDouble() ?? 0.0;
     final int newTotalSessions = (teacherData['totalSessions'] ?? 0) + 1;
@@ -53,7 +149,7 @@ class _TeachersPageState extends State<TeachersPage> {
       BuildContext context, String docId, Map<String, dynamic> teacherData) {
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: AppColors.cardBackground,
           title: const Text('Confirm Session',
@@ -64,23 +160,24 @@ class _TeachersPageState extends State<TeachersPage> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('Cancel',
                   style: TextStyle(color: AppColors.textSecondary)),
             ),
             ElevatedButton(
               onPressed: () {
-                // The fix: Removed 'await' here
                 _recordSession(docId, teacherData);
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('Session recorded successfully!')),
-                );
+                Navigator.of(dialogContext).pop();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('Session recorded successfully!')),
+                  );
+                }
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.orange, // or primaryOrange
-                foregroundColor: Colors.white, // makes the text/icons white
+                backgroundColor: AppColors.primaryBlue,
+                foregroundColor: Colors.white,
               ),
               child: const Text('Confirm'),
             ),
@@ -93,36 +190,72 @@ class _TeachersPageState extends State<TeachersPage> {
   void _showDeleteConfirmation(BuildContext context, String docId) {
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: AppColors.cardBackground,
           title: const Text('Confirm Deletion',
               style: TextStyle(color: AppColors.textPrimary)),
-          content: const Text('Are you sure you want to delete this teacher?',
-              style: TextStyle(color: AppColors.textSecondary)),
+          content: const Text(
+            'Are you sure you want to delete this teacher and all their payment history?',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('Cancel',
                   style: TextStyle(color: AppColors.textSecondary)),
             ),
             ElevatedButton(
               onPressed: () async {
-                await FirebaseFirestore.instance
-                    .collection('teachers')
-                    .doc(docId)
-                    .delete();
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('Teacher deleted successfully!')),
-                );
+                try {
+                  final batch = FirebaseFirestore.instance.batch();
+                  final paymentsSnapshot = await FirebaseFirestore.instance
+                      .collection('teacher_payments')
+                      .where('teacherId', isEqualTo: docId)
+                      .get();
+
+                  for (var doc in paymentsSnapshot.docs) {
+                    batch.delete(doc.reference);
+                  }
+
+                  batch.delete(FirebaseFirestore.instance
+                      .collection('teachers')
+                      .doc(docId));
+
+                  await batch.commit();
+
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                            'Teacher and all related payments deleted successfully!'),
+                        backgroundColor: AppColors.green,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content:
+                            Text('Failed to delete teacher and payments: $e'),
+                        backgroundColor: AppColors.red,
+                      ),
+                    );
+                  }
+                }
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.orange, // or primaryOrange
-                foregroundColor: Colors.white, // makes the text/icons white
+                backgroundColor: AppColors.red,
+                foregroundColor: Colors.white,
               ),
-              child: const Text('Confirm'),
+              child: const Text('Delete'),
             ),
           ],
         );
@@ -135,7 +268,7 @@ class _TeachersPageState extends State<TeachersPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       floatingActionButton: FloatingActionButton(
-        backgroundColor: AppColors.orange,
+        backgroundColor: AppColors.primaryOrange,
         foregroundColor: Colors.white,
         child: const Icon(Icons.add),
         onPressed: () {
@@ -165,7 +298,7 @@ class _TeachersPageState extends State<TeachersPage> {
                 if (snapshot.hasError) {
                   return Center(
                       child: Text('Something went wrong: ${snapshot.error}',
-                          style: TextStyle(color: AppColors.red)));
+                          style: const TextStyle(color: AppColors.red)));
                 }
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return const Center(
@@ -198,30 +331,44 @@ class _TeachersPageState extends State<TeachersPage> {
                   itemBuilder: (context, index) {
                     final doc = filteredDocs[index];
                     final data = doc.data() as Map<String, dynamic>;
+                    final docId = doc.id;
 
-                    // Handle potential type mismatch for totalEarnings
                     final totalEarnings = data['totalEarnings'];
                     final totalEarningsDouble = (totalEarnings is int)
                         ? totalEarnings.toDouble()
                         : (totalEarnings as double? ?? 0.0);
 
+                    final totalSessions = data['totalSessions'] as int? ?? 0;
+
                     return TeacherCard(
                       fullName: data['fullName'] ?? '',
                       subject: data['subject'] ?? 'N/A',
-                      totalSessions: data['totalSessions'] ?? 0,
+                      totalSessions: totalSessions,
                       totalEarnings: totalEarningsDouble,
                       onEdit: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => EditTeacherPage(
-                                teacherData: data, docId: doc.id),
+                                teacherData: data, docId: docId),
                           ),
                         );
                       },
-                      onDelete: () => _showDeleteConfirmation(context, doc.id),
+                      onDelete: () => _showDeleteConfirmation(context, docId),
                       onRecordSession: () =>
-                          _showRecordSessionConfirmation(context, doc.id, data),
+                          _showRecordSessionConfirmation(context, docId, data),
+                      onPay: () => _showPayConfirmation(context, docId, data),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => TeacherPaymentHistoryPage(
+                              teacherId: docId,
+                              teacherName: data['fullName'] ?? '',
+                            ),
+                          ),
+                        );
+                      },
                     );
                   },
                 );

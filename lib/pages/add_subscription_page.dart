@@ -16,7 +16,7 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
   final _formKey = GlobalKey<FormState>();
 
   final _priceController = TextEditingController();
-  final _sessionsController = TextEditingController();
+  // Removed _sessionsController
 
   DateTime? _paymentDate;
   DateTime? _endDate;
@@ -42,7 +42,7 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
   @override
   void dispose() {
     _priceController.dispose();
-    _sessionsController.dispose();
+    // Removed _sessionsController.dispose()
     super.dispose();
   }
 
@@ -97,7 +97,7 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
         "status": calculatedStatus,
         "groupId": _selectedGroupId,
         "subjects": _selectedSubjects,
-        "numberOfSessions": int.tryParse(_sessionsController.text.trim()) ?? 0,
+        // Removed "numberOfSessions"
         "paymentDate": Timestamp.fromDate(_paymentDate!),
         "endDate": _endDate != null ? Timestamp.fromDate(_endDate!) : null,
         "firstLessonDate": _firstLessonDate != null
@@ -330,12 +330,7 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
                   },
                 ),
                 const SizedBox(height: 16),
-                TextFormField(
-                  controller: _sessionsController,
-                  decoration:
-                      const InputDecoration(labelText: 'Number of Sessions'),
-                  keyboardType: TextInputType.number,
-                ),
+                // Removed the Number of Sessions TextFormField
                 const SizedBox(height: 16),
                 FutureBuilder<QuerySnapshot>(
                   future: _subjectsFuture,
@@ -417,14 +412,14 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
                 _buildDateField("Payment Date", _paymentDate,
                     (date) => setState(() => _paymentDate = date)),
                 const SizedBox(height: 16),
-                _buildDateField("End Date (Optional)", _endDate,
-                    (date) => setState(() => _endDate = date)),
-                const SizedBox(height: 16),
                 _buildDateField(
                     "First Lesson Date (Optional)",
                     _firstLessonDate,
                     (date) => setState(() => _firstLessonDate = date)),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+                _buildDateField("End Date (Optional)", _endDate,
+                    (date) => setState(() => _endDate = date)),
+                const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(

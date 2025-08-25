@@ -388,62 +388,53 @@ class DashboardPage extends StatefulWidget {
 /// ===== DASHBOARD PAGE STATE =====
 class _DashboardPageState extends State<DashboardPage> {
   Future<Map<String, dynamic>> _fetchDashboardData() async {
-    // 1. Get the current month's start and end dates
-    final now = DateTime.now();
-    final startOfMonth = DateTime(now.year, now.month, 1);
-    final endOfMonth = DateTime(now.year, now.month + 1, 0);
+    // Query your collections to get the counts for the dashboard.
+    // Use Future.wait to run the queries in parallel for efficiency.
+    final results = await Future.wait([
+      FirebaseFirestore.instance.collection('subscriptions').count().get(),
+      FirebaseFirestore.instance
+          .collection('subscriptions')
+          .where('status', isEqualTo: 'Active')
+          .count()
+          .get(),
+      FirebaseFirestore.instance
+          .collection('subscriptions')
+          .where('status', isEqualTo: 'Expired')
+          .count()
+          .get(),
+      // ADDED: A query to count subscriptions with an 'Unknown' status
+      FirebaseFirestore.instance
+          .collection('subscriptions')
+          .where('status', isEqualTo: 'Unknown')
+          .count()
+          .get(),
+      FirebaseFirestore.instance.collection('teachers').count().get(),
+    ]);
 
-    // 2. Query your collections: 'subscriptions' and 'expenses'
-    // Count active students from the total number of subscriptions
-    final studentsCountSnapshot = await FirebaseFirestore.instance
-        .collection('subscriptions')
-        .count()
-        .get();
+    final studentsCountSnapshot = results[0];
+    final activeSubscriptionsSnapshot = results[1];
+    final expiredSubscriptionsSnapshot = results[2];
+    final unknownSubscriptionsSnapshot = results[3]; // Capture the new result
+    final teachersCountSnapshot = results[4];
 
-    // Fees: Query 'subscriptions' using 'paymentDate' and sum 'price'
-    final feesQuery = FirebaseFirestore.instance
-        .collection('subscriptions')
-        .where('paymentDate', isGreaterThanOrEqualTo: startOfMonth)
-        .where('paymentDate', isLessThanOrEqualTo: endOfMonth)
-        .get();
-
-    // Expenses: Now correctly query 'expenses' using 'date' and sum 'amount'
-    final expensesQuery = FirebaseFirestore.instance
-        .collection('expenses')
-        .where('date', isGreaterThanOrEqualTo: startOfMonth)
-        .where('date', isLessThanOrEqualTo: endOfMonth)
-        .get();
-
-    // Use Future.wait to run the financial queries in parallel
-    final results = await Future.wait([feesQuery, expensesQuery]);
-    final feesDocs = results[0].docs;
-    final expensesDocs = results[1].docs;
-
-    // 3. Process the results
+    // Process the results
     final studentsCount = studentsCountSnapshot.count;
-    double feesCollected = 0.0;
-    for (var doc in feesDocs) {
-      final data = doc.data();
-      feesCollected += (data['price'] as num).toDouble();
-    }
-    double expenses = 0.0;
-    for (var doc in expensesDocs) {
-      final data = doc.data();
-      // Correctly use 'amount' field from the 'expenses' collection
-      expenses += (data['amount'] as num).toDouble();
-    }
-    final netBalance = feesCollected - expenses;
+    final activeSubscriptionsCount = activeSubscriptionsSnapshot.count;
+    final expiredSubscriptionsCount = expiredSubscriptionsSnapshot.count;
+    final unknownSubscriptionsCount =
+        unknownSubscriptionsSnapshot.count; // Get the new count
+    final teachersCount = teachersCountSnapshot.count;
 
-    // 4. Return the combined data
+    // Return the combined data
     return {
       'studentsCount': studentsCount,
-      'feesCollected': feesCollected,
-      'expenses': expenses,
-      'netBalance': netBalance,
+      'activeSubscriptionsCount': activeSubscriptionsCount,
+      'expiredSubscriptionsCount': expiredSubscriptionsCount,
+      'unknownSubscriptionsCount': unknownSubscriptionsCount, // Add to the map
+      'teachersCount': teachersCount,
     };
   }
 
-  @override
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -475,35 +466,40 @@ class _DashboardPageState extends State<DashboardPage> {
                       value: data['studentsCount'].toString(),
                       unit: 'students',
                       title: 'Active Students',
-                      trendText: '+12.5%',
-                      trendPositive: true,
+                      // ADDED: onTap callback for the students card
+                      onTap: () =>
+                          widget.onGoToTab(10), // Index 10 for Students
                     ),
                     _StatData(
                       color: AppColors.primaryOrange,
-                      icon: Icons.receipt_long_rounded,
-                      value: data['feesCollected'].toString(),
-                      unit: 'DZD',
-                      title: 'Fees Collected (Month)',
-                      trendText: '+8.2%',
-                      trendPositive: true,
+                      icon: Icons.school_rounded,
+                      value: data['teachersCount'].toString(),
+                      unit: 'teachers',
+                      title: 'Total Teachers',
+                      // ADDED: onTap callback for the teachers card
+                      onTap: () => widget.onGoToTab(6), // Index 6 for Teachers
+                    ),
+                    _StatData(
+                      color: AppColors.green,
+                      icon: Icons.check_circle_rounded,
+                      value: data['activeSubscriptionsCount'].toString(),
+                      unit: 'subscriptions',
+                      title: 'Active Subscriptions',
                     ),
                     _StatData(
                       color: AppColors.red,
-                      icon: Icons.money_off_csred_rounded,
-                      value: data['expenses'].toString(),
-                      unit: 'DZD',
-                      title: 'Expenses (Month)',
-                      trendText: '+2.1%',
-                      trendPositive: false,
+                      icon: Icons.cancel_rounded,
+                      value: data['expiredSubscriptionsCount'].toString(),
+                      unit: 'subscriptions',
+                      title: 'Expired Subscriptions',
                     ),
+                    // ADDED: The new stat card for 'Unknown' subscriptions
                     _StatData(
                       color: AppColors.purple,
-                      icon: Icons.account_balance_wallet_rounded,
-                      value: data['netBalance'].toString(),
-                      unit: 'DZD',
-                      title: 'Net Balance (Month)',
-                      trendText: '+15.3%',
-                      trendPositive: true,
+                      icon: Icons.help_outline_rounded,
+                      value: data['unknownSubscriptionsCount'].toString(),
+                      unit: 'subscriptions',
+                      title: 'Unknown Status',
                     ),
                   ];
                   return GridView.builder(
@@ -520,6 +516,8 @@ class _DashboardPageState extends State<DashboardPage> {
                         title: data.title,
                         trendText: data.trendText,
                         trendPositive: data.trendPositive,
+                        onTap:
+                            data.onTap, // Pass the onTap callback to the card
                       );
                     },
                     gridDelegate:
@@ -617,6 +615,8 @@ class _StatData {
     required this.title,
     this.trendText,
     this.trendPositive = true,
+    // ADDED: The onTap callback
+    this.onTap,
   });
   final Color color;
   final IconData icon;
@@ -625,6 +625,7 @@ class _StatData {
   final String title;
   final String? trendText;
   final bool trendPositive;
+  final VoidCallback? onTap; // Added a nullable VoidCallback
 }
 
 class _SectionHeader extends StatelessWidget {
@@ -663,6 +664,8 @@ class _StatCard extends StatelessWidget {
     required this.title,
     this.trendText,
     this.trendPositive = true,
+    // ADDED: The onTap callback
+    this.onTap,
   });
   final Color color;
   final IconData icon;
@@ -671,88 +674,95 @@ class _StatCard extends StatelessWidget {
   final String title;
   final String? trendText;
   final bool trendPositive;
+  final VoidCallback? onTap; // Accept a nullable VoidCallback
+
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, color: color, size: 28),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    title,
+    // WRAPPED: The Card with an InkWell for tap functionality
+    return InkWell(
+      onTap: onTap, // Assign the onTap callback
+      borderRadius: BorderRadius.circular(16),
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, color: color, size: 28),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Text(
+                    value,
                     style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black87,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  unit,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const Spacer(),
-                if (trendText != null)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: trendPositive
-                          ? Colors.green.shade50
-                          : Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(14),
+                  const SizedBox(width: 4),
+                  Text(
+                    unit,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[600],
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          trendPositive
-                              ? Icons.trending_up
-                              : Icons.trending_down,
-                          size: 14,
-                          color: trendPositive ? Colors.green : Colors.red,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          trendText!,
-                          style: TextStyle(
+                  ),
+                  const Spacer(),
+                  if (trendText != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: trendPositive
+                            ? Colors.green.shade50
+                            : Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            trendPositive
+                                ? Icons.trending_up
+                                : Icons.trending_down,
+                            size: 14,
                             color: trendPositive ? Colors.green : Colors.red,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 4),
+                          Text(
+                            trendText!,
+                            style: TextStyle(
+                              color: trendPositive ? Colors.green : Colors.red,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

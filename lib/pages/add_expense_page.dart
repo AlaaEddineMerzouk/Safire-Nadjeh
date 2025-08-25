@@ -20,11 +20,13 @@ class _AddExpensePageState extends State<AddExpensePage> {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
 
+      // Add the new isArchived field to the document
       await FirebaseFirestore.instance.collection('expenses').add({
         'name': _name,
         'amount': _amount,
         'status': _status,
         'date': _date,
+        'isArchived': false, // Add this line to set the archive status
       });
 
       if (mounted) {

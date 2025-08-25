@@ -21,7 +21,7 @@ class RenewSubscriptionPage extends StatefulWidget {
 class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
   final _formKey = GlobalKey<FormState>();
   final _priceController = TextEditingController();
-  final _sessionsController = TextEditingController();
+  // Removed _sessionsController as per user request
 
   DateTime _newPaymentDate = DateTime.now();
   DateTime _newEndDate = DateTime.now().add(const Duration(days: 30));
@@ -34,8 +34,7 @@ class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
     super.initState();
     // Initialize controllers with existing data
     _priceController.text = widget.subscriptionData['price']?.toString() ?? '';
-    _sessionsController.text =
-        widget.subscriptionData['numberOfSessions']?.toString() ?? '';
+    // Removed _sessionsController initialization
 
     // Asynchronously fetch the group name using the groupId
     _fetchGroupName();
@@ -44,7 +43,7 @@ class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
   @override
   void dispose() {
     _priceController.dispose();
-    _sessionsController.dispose();
+    // Removed _sessionsController disposal
     super.dispose();
   }
 
@@ -167,6 +166,7 @@ class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
         'paymentDate': oldSubscriptionData['paymentDate'],
         'endDate': oldSubscriptionData['endDate'],
         'numberOfSessions': oldSubscriptionData['numberOfSessions'],
+        'firstLessonDate': oldSubscriptionData['firstLessonDate'],
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -175,7 +175,7 @@ class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
         'price': double.tryParse(_priceController.text),
         'paymentDate': Timestamp.fromDate(_newPaymentDate),
         'endDate': Timestamp.fromDate(_newEndDate),
-        'numberOfSessions': int.tryParse(_sessionsController.text),
+        // Removed 'numberOfSessions' from the update
         'status': 'Active',
       });
 
@@ -222,6 +222,9 @@ class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     );
 
+    final subjects =
+        List<String>.from(widget.subscriptionData['subjects'] ?? []);
+
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
       appBar: AppBar(
@@ -258,6 +261,16 @@ class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
                     color: AppColors.textSecondary,
                   ),
                 ),
+                const SizedBox(height: 8),
+                // Displaying the subjects here
+                if (subjects.isNotEmpty)
+                  Text(
+                    'Subjects: ${subjects.join(', ')}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
                 const SizedBox(height: 24),
                 // New Price field
                 TextFormField(
@@ -278,25 +291,7 @@ class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
                   },
                 ),
                 const SizedBox(height: 16),
-                // New Number of Sessions field
-                TextFormField(
-                  controller: _sessionsController,
-                  decoration: const InputDecoration(
-                    labelText: 'Number of Sessions',
-                  ),
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(color: AppColors.textPrimary),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter number of sessions';
-                    }
-                    if (int.tryParse(value) == null) {
-                      return 'Please enter a valid integer';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
+                // Removed the Number of Sessions field
                 // New Payment Date field
                 _buildDateField(
                   "New Payment Date",

@@ -22,7 +22,7 @@ class _EditSubscriptionPageState extends State<EditSubscriptionPage> {
   final _formKey = GlobalKey<FormState>();
   final _studentNameController = TextEditingController();
   final _priceController = TextEditingController();
-  final _sessionsController = TextEditingController();
+  // Removed _sessionsController
 
   DateTime? _selectedPaymentDate;
   DateTime? _selectedEndDate;
@@ -40,8 +40,7 @@ class _EditSubscriptionPageState extends State<EditSubscriptionPage> {
     _studentNameController.text = widget.subscriptionData['studentName'] ?? '';
     _priceController.text =
         (widget.subscriptionData['price'] ?? 0.0).toString();
-    _sessionsController.text =
-        (widget.subscriptionData['numberOfSessions'] ?? 0).toString();
+    // Removed _sessionsController initialization
 
     _selectedGroupId = widget.subscriptionData['groupId'] as String?;
     _selectedSubjects =
@@ -62,7 +61,7 @@ class _EditSubscriptionPageState extends State<EditSubscriptionPage> {
   void dispose() {
     _studentNameController.dispose();
     _priceController.dispose();
-    _sessionsController.dispose();
+    // Removed _sessionsController.dispose()
     super.dispose();
   }
 
@@ -182,7 +181,7 @@ class _EditSubscriptionPageState extends State<EditSubscriptionPage> {
           'studentName': _studentNameController.text.trim(),
           'price': double.tryParse(_priceController.text) ?? 0.0,
           'groupId': _selectedGroupId,
-          'numberOfSessions': int.tryParse(_sessionsController.text) ?? 0,
+          // Removed 'numberOfSessions'
           'subjects': _selectedSubjects,
           'status': _determineStatus(),
           'paymentDate': Timestamp.fromDate(_selectedPaymentDate!),
@@ -325,13 +324,7 @@ class _EditSubscriptionPageState extends State<EditSubscriptionPage> {
                   },
                 ),
                 const SizedBox(height: 16),
-                TextFormField(
-                  controller: _sessionsController,
-                  keyboardType: TextInputType.number,
-                  decoration:
-                      const InputDecoration(labelText: 'Number of Sessions'),
-                  style: const TextStyle(color: AppColors.textPrimary),
-                ),
+                // Removed the Number of Sessions TextFormField
                 const SizedBox(height: 16),
                 FutureBuilder<QuerySnapshot>(
                   future: _subjectsFuture,
@@ -408,13 +401,14 @@ class _EditSubscriptionPageState extends State<EditSubscriptionPage> {
                 _buildDateField("Payment Date", _selectedPaymentDate,
                     (date) => setState(() => _selectedPaymentDate = date)),
                 const SizedBox(height: 16),
-                _buildDateField("End Date (Optional)", _selectedEndDate,
-                    (date) => setState(() => _selectedEndDate = date)),
-                const SizedBox(height: 16),
                 _buildDateField(
                     "First Lesson Date (Optional)",
                     _selectedFirstLessonDate,
                     (date) => setState(() => _selectedFirstLessonDate = date)),
+                const SizedBox(height: 16),
+                _buildDateField("End Date (Optional)", _selectedEndDate,
+                    (date) => setState(() => _selectedEndDate = date)),
+
                 const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,

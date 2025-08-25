@@ -10,7 +10,9 @@ import 'package:privateecole/pages/renew_subscription_page.dart';
 import 'package:privateecole/pages/subscription_history_page.dart'; // Import the new page
 
 class SubscriptionsPage extends StatefulWidget {
-  const SubscriptionsPage({Key? key}) : super(key: key);
+  final String? initialStatus;
+
+  const SubscriptionsPage({Key? key, this.initialStatus}) : super(key: key);
 
   @override
   State<SubscriptionsPage> createState() => _SubscriptionsPageState();
@@ -18,7 +20,8 @@ class SubscriptionsPage extends StatefulWidget {
 
 class _SubscriptionsPageState extends State<SubscriptionsPage> {
   String _searchQuery = '';
-  String _filterStatus = 'All';
+  late String
+      _filterStatus; // Use 'late' because it will be initialized in initState
   String _sortCriterion = 'Payment Date';
   bool _isDescending = true;
 
@@ -27,6 +30,8 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
   @override
   void initState() {
     super.initState();
+    // Use the initialStatus from the widget if it's not null, otherwise default to 'All'
+    _filterStatus = widget.initialStatus ?? 'All';
     _fetchGroups();
   }
 
@@ -258,17 +263,22 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
                           onDelete: () {
                             _showDeleteConfirmation(context, sub.id);
                           },
-                          onRenew: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => RenewSubscriptionPage(
-                                  subscriptionData: data,
-                                  docId: sub.id,
-                                ),
-                              ),
-                            );
-                          },
+                          // Conditionally show the renew button by passing null
+                          // when the status is not 'Expired'
+                          onRenew: data['status'] == 'Expired'
+                              ? () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          RenewSubscriptionPage(
+                                        subscriptionData: data,
+                                        docId: sub.id,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              : null,
                           // Add the onTap handler to navigate to the history page
                           onTap: () {
                             Navigator.push(
