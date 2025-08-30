@@ -18,74 +18,97 @@ class AttendanceHistoryPage extends StatefulWidget {
 }
 
 class _AttendanceHistoryPageState extends State<AttendanceHistoryPage> {
-  String? _selectedSubject;
-  List<String> _availableSubjects = [];
-  bool _isLoadingSubjects = true;
+  String? _selectedGroupId;
+  List<DocumentSnapshot> _availableGroups = [];
+  bool _isLoadingGroups = true;
 
   @override
   void initState() {
     super.initState();
-    // Fetch the list of subjects for the student when the page loads.
-    _fetchStudentSubjects();
+    _fetchStudentGroups();
   }
 
-  Future<void> _fetchStudentSubjects() async {
+  Future<void> _fetchStudentGroups() async {
+    debugPrint('Fetching groups for student: ${widget.studentId}');
     try {
       final subscriptionsQuery = await FirebaseFirestore.instance
           .collection('subscriptions')
           .where('studentId', isEqualTo: widget.studentId)
           .get();
 
-      final subjects = <String>{};
+      final groupIds = <String>{};
       for (var doc in subscriptionsQuery.docs) {
         final data = doc.data() as Map<String, dynamic>;
-        if (data.containsKey('subjects') && data['subjects'] is List) {
-          subjects.addAll(
-              (data['subjects'] as List).map((e) => e.toString()).toSet());
+        if (data.containsKey('groupIds') && data['groupIds'] is List) {
+          groupIds.addAll(
+              (data['groupIds'] as List).map((e) => e.toString()).toSet());
         }
+      }
+      debugPrint('Found groupIds in subscriptions: $groupIds');
+
+      if (groupIds.isEmpty) {
+        setState(() {
+          _isLoadingGroups = false;
+        });
+        debugPrint('No group IDs found for this student. Hiding dropdown.');
+        return;
+      }
+
+      final groupsQuery = await FirebaseFirestore.instance
+          .collection('groups')
+          .where(FieldPath.documentId, whereIn: groupIds.toList())
+          .get();
+
+      debugPrint('Found ${groupsQuery.docs.length} groups.');
+      for (var doc in groupsQuery.docs) {
+        debugPrint('Group ID: ${doc.id}, Name: ${doc['groupName']}');
       }
 
       setState(() {
-        _availableSubjects = subjects.toList();
-        if (_availableSubjects.isNotEmpty) {
-          _selectedSubject = _availableSubjects.first;
+        _availableGroups = groupsQuery.docs;
+        if (_availableGroups.isNotEmpty) {
+          _selectedGroupId = _availableGroups.first.id;
+          debugPrint('Initial selected group ID: $_selectedGroupId');
         }
-        _isLoadingSubjects = false;
+        _isLoadingGroups = false;
       });
     } catch (e) {
-      setState(() {
-        _isLoadingSubjects = false;
-      });
-      // In a real app, you might want to show a more user-friendly error.
-      debugPrint('Failed to fetch subjects: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingGroups = false;
+        });
+        debugPrint('Failed to fetch groups: $e');
+      }
     }
   }
 
-  // Function to delete an attendance record
   Future<void> _deleteRecord(String docId) async {
     try {
       await FirebaseFirestore.instance
           .collection('attendance')
           .doc(docId)
           .delete();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Attendance record deleted successfully.'),
-          backgroundColor: AppColors.green,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Attendance record deleted successfully.'),
+            backgroundColor: AppColors.green,
+          ),
+        );
+      }
     } catch (e) {
       debugPrint('Error deleting record: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to delete attendance record.'),
-          backgroundColor: AppColors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to delete attendance record.'),
+            backgroundColor: AppColors.red,
+          ),
+        );
+      }
     }
   }
 
-  // Function to show a confirmation dialog before deleting
   Future<bool> _showDeleteConfirmation(
       BuildContext context, String date, String status) async {
     final result = await showDialog<bool>(
@@ -102,20 +125,18 @@ class _AttendanceHistoryPageState extends State<AttendanceHistoryPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () =>
-                Navigator.of(context).pop(false), // Return false on cancel
+            onPressed: () => Navigator.of(context).pop(false),
             child:
                 const Text('Cancel', style: TextStyle(color: AppColors.orange)),
           ),
           TextButton(
-            onPressed: () =>
-                Navigator.of(context).pop(true), // Return true on delete
+            onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Delete', style: TextStyle(color: AppColors.red)),
           ),
         ],
       ),
     );
-    return result ?? false; // Return false if the dialog is dismissed
+    return result ?? false;
   }
 
   @override
@@ -132,14 +153,14 @@ class _AttendanceHistoryPageState extends State<AttendanceHistoryPage> {
       ),
       body: Column(
         children: [
-          _buildSubjectFilter(),
+          _buildGroupFilter(),
           Expanded(
-            child: _isLoadingSubjects
+            child: _isLoadingGroups
                 ? const Center(child: CircularProgressIndicator())
-                : _selectedSubject == null
+                : _selectedGroupId == null
                     ? const Center(
                         child: Text(
-                          'No subjects found for this student.',
+                          'No groups found for this student.',
                           style: TextStyle(color: AppColors.textSecondary),
                         ),
                       )
@@ -150,27 +171,29 @@ class _AttendanceHistoryPageState extends State<AttendanceHistoryPage> {
     );
   }
 
-  Widget _buildSubjectFilter() {
+  Widget _buildGroupFilter() {
     return Container(
       color: AppColors.cardBackground,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: DropdownButtonFormField<String>(
-        value: _selectedSubject,
+        value: _selectedGroupId,
         dropdownColor: AppColors.inputFill,
         isExpanded: true,
-        items: _availableSubjects.map((subjectName) {
+        items: _availableGroups.map((groupDoc) {
+          final groupName = groupDoc['groupName'] as String;
           return DropdownMenuItem<String>(
-            value: subjectName,
-            child: Text(subjectName, overflow: TextOverflow.ellipsis),
+            value: groupDoc.id,
+            child: Text(groupName, overflow: TextOverflow.ellipsis),
           );
         }).toList(),
-        onChanged: (String? newSubject) {
+        onChanged: (String? newGroupId) {
           setState(() {
-            _selectedSubject = newSubject;
+            _selectedGroupId = newGroupId;
           });
+          debugPrint('Selected new group ID: $_selectedGroupId');
         },
         decoration: InputDecoration(
-          labelText: 'Select Subject',
+          labelText: 'Select Group',
           labelStyle: const TextStyle(color: AppColors.textSecondary),
           filled: true,
           fillColor: AppColors.inputFill,
@@ -185,29 +208,38 @@ class _AttendanceHistoryPageState extends State<AttendanceHistoryPage> {
   }
 
   Widget _buildAttendanceList() {
+    debugPrint(
+        'Building attendance list for student: ${widget.studentId} and group: $_selectedGroupId');
     return StreamBuilder<QuerySnapshot>(
-      // Removed the `.where('status', isEqualTo: 'Present')` line to show all records
       stream: FirebaseFirestore.instance
           .collection('attendance')
           .where('studentId', isEqualTo: widget.studentId)
-          .where('subject', isEqualTo: _selectedSubject)
+          .where('groupId', isEqualTo: _selectedGroupId)
           .orderBy('date', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
+          debugPrint('Stream is waiting for data...');
           return const Center(child: CircularProgressIndicator());
         }
 
+        if (snapshot.hasError) {
+          debugPrint('Stream encountered an error: ${snapshot.error}');
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          debugPrint('Query returned no documents.');
           return const Center(
             child: Text(
-              'No attendance records found for this subject.',
+              'No attendance records found for this group.',
               style: TextStyle(color: AppColors.textSecondary),
               textAlign: TextAlign.center,
             ),
           );
         }
 
+        debugPrint('Query returned ${snapshot.data!.docs.length} documents.');
         final records = snapshot.data!.docs;
         return ListView.builder(
           itemCount: records.length,
@@ -216,11 +248,11 @@ class _AttendanceHistoryPageState extends State<AttendanceHistoryPage> {
             final data = record.data() as Map<String, dynamic>;
             final date = (data['date'] as Timestamp).toDate();
             final status = data['status'] ?? 'N/A';
-            final subject = data['subject'] ?? 'N/A';
             final isPresent = status == 'Present';
+            debugPrint('Displaying record for date: $date, status: $status');
 
             return Dismissible(
-              key: ValueKey(record.id), // Unique key for the item
+              key: ValueKey(record.id),
               direction: DismissDirection.endToStart,
               background: Container(
                 alignment: Alignment.centerRight,
@@ -242,10 +274,6 @@ class _AttendanceHistoryPageState extends State<AttendanceHistoryPage> {
                   title: Text(
                     DateFormat('d MMMM y, h:mm a').format(date),
                     style: const TextStyle(color: AppColors.textPrimary),
-                  ),
-                  subtitle: Text(
-                    'Subject: $subject',
-                    style: const TextStyle(color: AppColors.textSecondary),
                   ),
                   trailing: Text(
                     status,

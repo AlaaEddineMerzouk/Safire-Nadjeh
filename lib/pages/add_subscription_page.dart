@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../constants/app_colors.dart';
-import '../widgets/subscription_card.dart'; // Ensure this import is present
 
 class AddSubscriptionPage extends StatefulWidget {
   const AddSubscriptionPage({super.key});
@@ -16,7 +15,6 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
   final _formKey = GlobalKey<FormState>();
 
   final _priceController = TextEditingController();
-  // Removed _sessionsController
 
   DateTime? _paymentDate;
   DateTime? _endDate;
@@ -24,65 +22,52 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
 
   String? _selectedStudentId;
   String? _selectedStudentName;
-  String? _selectedGroupId;
-  final List<String> _selectedSubjects = [];
+  final List<String> _selectedGroupIds = [];
 
   late Future<QuerySnapshot> _studentsFuture;
   late Future<QuerySnapshot> _groupsFuture;
-  late Future<QuerySnapshot> _subjectsFuture;
 
   @override
   void initState() {
     super.initState();
     _studentsFuture = FirebaseFirestore.instance.collection('students').get();
     _groupsFuture = FirebaseFirestore.instance.collection('groups').get();
-    _subjectsFuture = FirebaseFirestore.instance.collection('subjects').get();
   }
 
   @override
   void dispose() {
     _priceController.dispose();
-    // Removed _sessionsController.dispose()
     super.dispose();
-  }
-
-  String _determineStatus() {
-    if (_endDate == null) {
-      return 'Unknown';
-    }
-    return _endDate!.isAfter(DateTime.now()) ? 'Active' : 'Expired';
   }
 
   Future<void> _saveSubscription() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedStudentId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a student')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select a student')),
+        );
+      }
       return;
     }
-    if (_selectedGroupId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a group')),
-      );
-      return;
-    }
-    if (_selectedSubjects.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select at least one subject')),
-      );
+    if (_selectedGroupIds.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select at least one group')),
+        );
+      }
       return;
     }
 
-    // Check if payment date is selected, it's still a required field
     if (_paymentDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a payment date')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select a payment date')),
+        );
+      }
       return;
     }
 
-    final String calculatedStatus = _determineStatus();
     final bool hasExpired =
         _endDate != null ? _endDate!.isBefore(DateTime.now()) : false;
     final bool hasPresentAfterExpired = _endDate != null
@@ -92,28 +77,29 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
     try {
       await FirebaseFirestore.instance.collection('subscriptions').add({
         "studentId": _selectedStudentId,
-        "studentName": _selectedStudentName,
         "price": double.tryParse(_priceController.text.trim()) ?? 0,
-        "status": calculatedStatus,
-        "groupId": _selectedGroupId,
-        "subjects": _selectedSubjects,
-        // Removed "numberOfSessions"
+        "groupIds": _selectedGroupIds,
         "paymentDate": Timestamp.fromDate(_paymentDate!),
         "endDate": _endDate != null ? Timestamp.fromDate(_endDate!) : null,
         "firstLessonDate": _firstLessonDate != null
             ? Timestamp.fromDate(_firstLessonDate!)
             : null,
         "createdAt": Timestamp.now(),
-        "hasExpired": hasExpired, // New field
-        "hasPresentAfterExpired": hasPresentAfterExpired, // New field
+        "hasExpired": hasExpired,
+        "hasPresentAfterExpired": hasPresentAfterExpired,
       });
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Subscription saved successfully!')),
+        );
         Navigator.pop(context);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save subscription: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save subscription: $e')),
+        );
+      }
     }
   }
 
@@ -194,6 +180,10 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
     final studentSnapshot = await _studentsFuture;
     final students = studentSnapshot.docs;
 
+    if (!mounted) {
+      return;
+    }
+
     final selectedStudent = await showDialog<QueryDocumentSnapshot>(
       context: context,
       builder: (context) {
@@ -202,9 +192,36 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
     );
 
     if (selectedStudent != null) {
+      if (!mounted) return;
       setState(() {
         _selectedStudentId = selectedStudent.id;
         _selectedStudentName = selectedStudent['studentName'] as String;
+      });
+    }
+  }
+
+  Future<void> _showGroupMultiSelectDialog() async {
+    final groupSnapshot = await _groupsFuture;
+    final groups = groupSnapshot.docs;
+    if (!mounted) {
+      return;
+    }
+
+    final selectedGroups = await showDialog<List<String>>(
+      context: context,
+      builder: (context) {
+        return _GroupMultiSelectDialog(
+          groups: groups,
+          initialSelectedGroupIds: _selectedGroupIds,
+        );
+      },
+    );
+
+    if (selectedGroups != null) {
+      if (!mounted) return;
+      setState(() {
+        _selectedGroupIds.clear();
+        _selectedGroupIds.addAll(selectedGroups);
       });
     }
   }
@@ -284,129 +301,67 @@ class _AddSubscriptionPageState extends State<AddSubscriptionPage> {
                       value!.isEmpty ? 'Please enter a price' : null,
                 ),
                 const SizedBox(height: 16),
-                FutureBuilder<QuerySnapshot>(
-                  future: _groupsFuture,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (snapshot.hasError) {
-                      return const Center(
-                          child: Text('Error fetching groups.'));
-                    }
-                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                      return const Center(
-                          child: Text(
-                              'No groups available. Please add a group first.'));
-                    }
-
-                    final groups = snapshot.data!.docs;
-                    return DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(
-                        labelText: 'Select Group',
-                        filled: true,
-                        fillColor: AppColors.inputFill,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(12)),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                      value: _selectedGroupId,
-                      hint: const Text('Select a group'),
-                      items: groups.map((doc) {
-                        return DropdownMenuItem<String>(
-                          value: doc.id,
-                          child: Text(doc['groupName'] as String),
-                        );
-                      }).toList(),
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          _selectedGroupId = newValue;
-                        });
-                      },
-                      validator: (value) =>
-                          value == null ? 'Please select a group' : null,
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
-                // Removed the Number of Sessions TextFormField
-                const SizedBox(height: 16),
-                FutureBuilder<QuerySnapshot>(
-                  future: _subjectsFuture,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (snapshot.hasError) {
-                      return const Center(
-                          child: Text('Error fetching subjects.'));
-                    }
-                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                      return const Center(
-                          child: Text(
-                              'No subjects available. Please add a subject first.'));
-                    }
-
-                    final subjects = snapshot.data!.docs;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                InkWell(
+                  onTap: _showGroupMultiSelectDialog,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 16),
+                    decoration: BoxDecoration(
+                      color: AppColors.inputFill,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.inputBorder),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'Subjects',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: subjects.map((doc) {
-                            final subjectName = (doc.data()
-                                as Map<String, dynamic>)['name'] as String;
-                            final isSelected =
-                                _selectedSubjects.contains(subjectName);
-                            return FilterChip(
-                              label: Text(subjectName),
-                              selected: isSelected,
-                              onSelected: (selected) {
-                                setState(() {
-                                  if (selected) {
-                                    _selectedSubjects.add(subjectName);
-                                  } else {
-                                    _selectedSubjects.remove(subjectName);
-                                  }
-                                });
-                              },
-                              backgroundColor: AppColors.backgroundLight,
-                              selectedColor: AppColors.primary.withOpacity(0.1),
-                              checkmarkColor: AppColors.primary,
-                              labelStyle: TextStyle(
-                                color: isSelected
-                                    ? AppColors.primary
-                                    : AppColors.textSecondary,
-                                fontWeight: isSelected
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                                side: BorderSide(
-                                  color: isSelected
-                                      ? AppColors.primary
-                                      : AppColors.inputBorder,
-                                  width: 1.5,
+                        FutureBuilder<QuerySnapshot>(
+                          future: _groupsFuture,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Text('Loading groups...');
+                            }
+                            if (snapshot.hasError) {
+                              return const Text('Error loading groups');
+                            }
+                            final groups = snapshot.data!.docs;
+                            final selectedGroupNames =
+                                _selectedGroupIds.map((id) {
+                              final matchingGroups =
+                                  groups.where((doc) => doc.id == id);
+                              if (matchingGroups.isNotEmpty) {
+                                return matchingGroups.first['groupName']
+                                    as String;
+                              } else {
+                                return '';
+                              }
+                            }).toList();
+
+                            String displayText = _selectedGroupIds.isEmpty
+                                ? 'Select Groups'
+                                : selectedGroupNames
+                                    .where((name) => name.isNotEmpty)
+                                    .join(', ');
+
+                            return Expanded(
+                              child: Text(
+                                displayText,
+                                style: TextStyle(
+                                  color: _selectedGroupIds.isNotEmpty
+                                      ? AppColors.textPrimary
+                                      : AppColors.textSecondary,
+                                  fontSize: 16,
                                 ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             );
-                          }).toList(),
+                          },
                         ),
+                        const Icon(Icons.arrow_drop_down,
+                            color: AppColors.textSecondary),
                       ],
-                    );
-                  },
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 _buildDateField("Payment Date", _paymentDate,
@@ -534,6 +489,71 @@ class _StudentSearchDialogState extends State<_StudentSearchDialog> {
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+}
+
+class _GroupMultiSelectDialog extends StatefulWidget {
+  final List<QueryDocumentSnapshot> groups;
+  final List<String> initialSelectedGroupIds;
+
+  const _GroupMultiSelectDialog({
+    Key? key,
+    required this.groups,
+    required this.initialSelectedGroupIds,
+  }) : super(key: key);
+
+  @override
+  State<_GroupMultiSelectDialog> createState() =>
+      _GroupMultiSelectDialogState();
+}
+
+class _GroupMultiSelectDialogState extends State<_GroupMultiSelectDialog> {
+  late List<String> _selectedGroupIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedGroupIds = List.from(widget.initialSelectedGroupIds);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Select Groups'),
+      backgroundColor: AppColors.cardBackground,
+      content: SingleChildScrollView(
+        child: ListBody(
+          children: widget.groups.map((group) {
+            final groupName = group['groupName'] as String;
+            final isSelected = _selectedGroupIds.contains(group.id);
+            return CheckboxListTile(
+              title: Text(groupName),
+              value: isSelected,
+              onChanged: (bool? value) {
+                setState(() {
+                  if (value == true) {
+                    _selectedGroupIds.add(group.id);
+                  } else {
+                    _selectedGroupIds.remove(group.id);
+                  }
+                });
+              },
+              controlAffinity: ListTileControlAffinity.leading,
+            );
+          }).toList(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.of(context).pop(_selectedGroupIds),
+          child: const Text('Done'),
         ),
       ],
     );

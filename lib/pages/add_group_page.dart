@@ -14,39 +14,20 @@ class AddGroupPage extends StatefulWidget {
 class _AddGroupPageState extends State<AddGroupPage> {
   final _formKey = GlobalKey<FormState>();
   final _groupNameController = TextEditingController();
+  final _priceController =
+      TextEditingController(); // Added controller for price
 
   String? _selectedTeacherId;
-  final List<String> _selectedSubjects = [];
-
-  final List<String> _availableSubjects = [
-    "Math",
-    "Science",
-    "English",
-    "History",
-    "Physics",
-    "Chemistry",
-  ];
 
   Future<void> _saveGroup() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedTeacherId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a teacher')),
-      );
-      return;
-    }
-    if (_selectedSubjects.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select at least one subject')),
-      );
-      return;
-    }
 
     try {
       await FirebaseFirestore.instance.collection('groups').add({
         'groupName': _groupNameController.text.trim(),
+        'pricePerStudent':
+            double.parse(_priceController.text), // Added price field
         'teacherId': _selectedTeacherId,
-        'subjects': _selectedSubjects,
         'createdAt': Timestamp.now(),
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -104,6 +85,41 @@ class _AddGroupPageState extends State<AddGroupPage> {
               ),
               const SizedBox(height: 24),
 
+              // Price per session input field
+              TextFormField(
+                controller: _priceController,
+                style: const TextStyle(color: AppColors.textPrimary),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Price per session',
+                  labelStyle: const TextStyle(color: AppColors.textSecondary),
+                  prefixIcon:
+                      const Icon(Icons.attach_money, color: AppColors.primary),
+                  filled: true,
+                  fillColor: AppColors.inputFill,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide:
+                        const BorderSide(color: AppColors.primary, width: 2),
+                  ),
+                ),
+                validator: (value) {
+                  if (value!.isEmpty) {
+                    return 'Please enter a price';
+                  }
+                  if (double.tryParse(value) == null) {
+                    return 'Please enter a valid number';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 24),
+
               // Teacher selection dropdown
               FutureBuilder<QuerySnapshot>(
                 future: FirebaseFirestore.instance.collection('teachers').get(),
@@ -121,7 +137,7 @@ class _AddGroupPageState extends State<AddGroupPage> {
                     style: const TextStyle(color: AppColors.textPrimary),
                     dropdownColor: AppColors.inputFill,
                     decoration: InputDecoration(
-                      labelText: 'Select Teacher',
+                      labelText: 'Select Teacher (Optional)',
                       labelStyle:
                           const TextStyle(color: AppColors.textSecondary),
                       prefixIcon:
@@ -144,57 +160,8 @@ class _AddGroupPageState extends State<AddGroupPage> {
                     onChanged: (String? newValue) {
                       setState(() => _selectedTeacherId = newValue);
                     },
-                    validator: (value) =>
-                        value == null ? 'Please select a teacher' : null,
                   );
                 },
-              ),
-              const SizedBox(height: 24),
-
-              // Subjects selection chips
-              const Text(
-                'Subjects',
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: _availableSubjects.map((subject) {
-                  final isSelected = _selectedSubjects.contains(subject);
-                  return FilterChip(
-                    label: Text(subject),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedSubjects.add(subject);
-                        } else {
-                          _selectedSubjects.remove(subject);
-                        }
-                      });
-                    },
-                    backgroundColor: AppColors.backgroundLight,
-                    selectedColor: AppColors.primary.withOpacity(0.1),
-                    checkmarkColor: AppColors.primary,
-                    labelStyle: TextStyle(
-                      color: isSelected
-                          ? AppColors.primary
-                          : AppColors.textSecondary,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      side: BorderSide(
-                        color: isSelected
-                            ? AppColors.primary
-                            : AppColors.inputBorder,
-                        width: 1.5,
-                      ),
-                    ),
-                  );
-                }).toList(),
               ),
               const SizedBox(height: 24),
 

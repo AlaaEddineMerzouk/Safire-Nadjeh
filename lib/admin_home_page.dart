@@ -19,6 +19,8 @@ import 'firebase_options.dart';
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
+final ValueNotifier<String> searchQueryNotifier = ValueNotifier('');
+
 class AppColors {
   static const Color primaryBlue = Color(0xFF1E88E5);
   static const Color primaryOrange = Color(0xFFFF8A00);
@@ -92,6 +94,7 @@ class AdminShell extends StatefulWidget {
 class _AdminShellState extends State<AdminShell> {
   int _index = 0;
   final NotificationService _notificationService = NotificationService();
+  bool _isSearching = false;
 
   @override
   void initState() {
@@ -134,10 +137,6 @@ class _AdminShellState extends State<AdminShell> {
         label: 'Groups',
         icon: Icons.group_work_rounded,
         widget: const ManageGroupsPage()),
-    _AppPage(
-        label: 'Subjects',
-        icon: Icons.class_rounded,
-        widget: const ManageSubjectsPage()),
     _AppPage(
         label: 'Statistics',
         icon: Icons.insights_rounded,
@@ -203,23 +202,22 @@ class _AdminShellState extends State<AdminShell> {
                   },
                   child: Container(
                     key: ValueKey<int>(count),
-                    padding: const EdgeInsets.all(2), // Smaller padding
+                    padding: const EdgeInsets.all(2),
                     decoration: BoxDecoration(
                       color: AppColors.red,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: Colors.white, width: 1), // Thinner border
+                      border: Border.all(color: Colors.white, width: 1),
                     ),
                     constraints: const BoxConstraints(
-                      minWidth: 15, // Smaller min width
-                      minHeight: 15, // Smaller min height
+                      minWidth: 15,
+                      minHeight: 15,
                     ),
                     child: Center(
                       child: Text(
                         count.toString(),
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 8, // Smaller font size
+                          fontSize: 8,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -241,20 +239,60 @@ class _AdminShellState extends State<AdminShell> {
           _navPages.indexWhere((page) => page.label == _allPages[_index].label);
       final String currentTitle = _allPages[_index].label;
 
-      // This is the updated logic to find the correct index for the bottom nav bar.
-      // It now correctly matches the icon of the current page to the icon in the bottom nav pages.
       final int bottomNavIndex = _bottomNavPages
           .indexWhere((page) => page.icon == _allPages[_index].icon);
 
       return Scaffold(
         appBar: AppBar(
-          title: Text(currentTitle,
-              style: const TextStyle(fontWeight: FontWeight.w700)),
+          title: _isSearching
+              ? TextField(
+                  decoration: const InputDecoration(
+                    hintText: 'Search...',
+                    border: InputBorder.none,
+                    hintStyle: TextStyle(color: Colors.black54),
+                  ),
+                  onChanged: (value) {
+                    searchQueryNotifier.value = value;
+                  },
+                )
+              : Text(currentTitle,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+          leading: _isSearching
+              ? IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () {
+                    setState(() {
+                      _isSearching = false;
+                      searchQueryNotifier.value = '';
+                    });
+                  },
+                )
+              : _index != 0
+                  ? IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                      onPressed: () {
+                        _goTo(0);
+                      },
+                    )
+                  : null,
           actions: [
-            if (!isWide)
+            if (!isWide && !_isSearching)
               IconButton(
                 icon: const Icon(Icons.search_rounded),
-                onPressed: () {},
+                onPressed: () {
+                  setState(() {
+                    _isSearching = true;
+                  });
+                },
+              ),
+            if (!isWide && _isSearching)
+              IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: () {
+                  setState(() {
+                    searchQueryNotifier.value = '';
+                  });
+                },
               ),
             _buildNotificationBadge(),
             const SizedBox(width: 8),
@@ -320,25 +358,23 @@ class _AdminShellState extends State<AdminShell> {
                                     },
                                     child: Container(
                                       key: ValueKey<int>(unreadCount),
-                                      padding: const EdgeInsets.all(
-                                          2), // Smaller padding
+                                      padding: const EdgeInsets.all(2),
                                       decoration: BoxDecoration(
                                         color: AppColors.red,
                                         borderRadius: BorderRadius.circular(10),
                                         border: Border.all(
-                                            color: Colors.white,
-                                            width: 1), // Thinner border
+                                            color: Colors.white, width: 1),
                                       ),
                                       constraints: const BoxConstraints(
-                                        minWidth: 15, // Smaller min width
-                                        minHeight: 15, // Smaller min height
+                                        minWidth: 15,
+                                        minHeight: 15,
                                       ),
                                       child: Center(
                                         child: Text(
                                           unreadCount.toString(),
                                           style: const TextStyle(
                                             color: Colors.white,
-                                            fontSize: 8, // Smaller font size
+                                            fontSize: 8,
                                             fontWeight: FontWeight.bold,
                                           ),
                                         ),
@@ -388,50 +424,28 @@ class DashboardPage extends StatefulWidget {
 /// ===== DASHBOARD PAGE STATE =====
 class _DashboardPageState extends State<DashboardPage> {
   Future<Map<String, dynamic>> _fetchDashboardData() async {
-    // Query your collections to get the counts for the dashboard.
-    // Use Future.wait to run the queries in parallel for efficiency.
     final results = await Future.wait([
-      FirebaseFirestore.instance.collection('subscriptions').count().get(),
-      FirebaseFirestore.instance
-          .collection('subscriptions')
-          .where('status', isEqualTo: 'Active')
-          .count()
-          .get(),
-      FirebaseFirestore.instance
-          .collection('subscriptions')
-          .where('status', isEqualTo: 'Expired')
-          .count()
-          .get(),
-      // ADDED: A query to count subscriptions with an 'Unknown' status
-      FirebaseFirestore.instance
-          .collection('subscriptions')
-          .where('status', isEqualTo: 'Unknown')
-          .count()
-          .get(),
+      FirebaseFirestore.instance.collection('students').count().get(),
       FirebaseFirestore.instance.collection('teachers').count().get(),
+      FirebaseFirestore.instance.collection('groups').count().get(),
+      FirebaseFirestore.instance.collection('subscriptions').count().get(),
     ]);
 
     final studentsCountSnapshot = results[0];
-    final activeSubscriptionsSnapshot = results[1];
-    final expiredSubscriptionsSnapshot = results[2];
-    final unknownSubscriptionsSnapshot = results[3]; // Capture the new result
-    final teachersCountSnapshot = results[4];
+    final teachersCountSnapshot = results[1];
+    final groupsCountSnapshot = results[2];
+    final subscriptionsCountSnapshot = results[3];
 
-    // Process the results
     final studentsCount = studentsCountSnapshot.count;
-    final activeSubscriptionsCount = activeSubscriptionsSnapshot.count;
-    final expiredSubscriptionsCount = expiredSubscriptionsSnapshot.count;
-    final unknownSubscriptionsCount =
-        unknownSubscriptionsSnapshot.count; // Get the new count
     final teachersCount = teachersCountSnapshot.count;
+    final groupsCount = groupsCountSnapshot.count;
+    final subscriptionsCount = subscriptionsCountSnapshot.count;
 
-    // Return the combined data
     return {
       'studentsCount': studentsCount,
-      'activeSubscriptionsCount': activeSubscriptionsCount,
-      'expiredSubscriptionsCount': expiredSubscriptionsCount,
-      'unknownSubscriptionsCount': unknownSubscriptionsCount, // Add to the map
       'teachersCount': teachersCount,
+      'groupsCount': groupsCount,
+      'subscriptionsCount': subscriptionsCount,
     };
   }
 
@@ -465,10 +479,8 @@ class _DashboardPageState extends State<DashboardPage> {
                       icon: Icons.people_alt_rounded,
                       value: data['studentsCount'].toString(),
                       unit: 'students',
-                      title: 'Active Students',
-                      // ADDED: onTap callback for the students card
-                      onTap: () =>
-                          widget.onGoToTab(10), // Index 10 for Students
+                      title: 'Total Students',
+                      onTap: () => widget.onGoToTab(9),
                     ),
                     _StatData(
                       color: AppColors.primaryOrange,
@@ -476,30 +488,23 @@ class _DashboardPageState extends State<DashboardPage> {
                       value: data['teachersCount'].toString(),
                       unit: 'teachers',
                       title: 'Total Teachers',
-                      // ADDED: onTap callback for the teachers card
-                      onTap: () => widget.onGoToTab(6), // Index 6 for Teachers
+                      onTap: () => widget.onGoToTab(6),
+                    ),
+                    _StatData(
+                      color: AppColors.purple,
+                      icon: Icons.group_work_rounded,
+                      value: data['groupsCount'].toString(),
+                      unit: 'groups',
+                      title: 'Total Groups',
+                      onTap: () => widget.onGoToTab(7),
                     ),
                     _StatData(
                       color: AppColors.green,
-                      icon: Icons.check_circle_rounded,
-                      value: data['activeSubscriptionsCount'].toString(),
+                      icon: Icons.receipt_long_rounded,
+                      value: data['subscriptionsCount'].toString(),
                       unit: 'subscriptions',
-                      title: 'Active Subscriptions',
-                    ),
-                    _StatData(
-                      color: AppColors.red,
-                      icon: Icons.cancel_rounded,
-                      value: data['expiredSubscriptionsCount'].toString(),
-                      unit: 'subscriptions',
-                      title: 'Expired Subscriptions',
-                    ),
-                    // ADDED: The new stat card for 'Unknown' subscriptions
-                    _StatData(
-                      color: AppColors.purple,
-                      icon: Icons.help_outline_rounded,
-                      value: data['unknownSubscriptionsCount'].toString(),
-                      unit: 'subscriptions',
-                      title: 'Unknown Status',
+                      title: 'Total Subscriptions',
+                      onTap: () => widget.onGoToTab(1),
                     ),
                   ];
                   return GridView.builder(
@@ -516,8 +521,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         title: data.title,
                         trendText: data.trendText,
                         trendPositive: data.trendPositive,
-                        onTap:
-                            data.onTap, // Pass the onTap callback to the card
+                        onTap: data.onTap,
                       );
                     },
                     gridDelegate:
@@ -563,22 +567,16 @@ class _DashboardPageState extends State<DashboardPage> {
                   goToTabIndex: 7,
                 ),
                 _ActionItem(
-                  label: 'Subjects',
-                  icon: Icons.class_rounded,
-                  color: AppColors.primaryBlue,
-                  goToTabIndex: 8,
-                ),
-                _ActionItem(
                   label: 'Students',
                   icon: Icons.person_add_rounded,
                   color: AppColors.green,
-                  goToTabIndex: 10,
+                  goToTabIndex: 9,
                 ),
                 _ActionItem(
                   label: 'Statistics',
                   icon: Icons.insights_rounded,
                   color: AppColors.purple,
-                  goToTabIndex: 9,
+                  goToTabIndex: 8,
                 ),
               ];
               return Wrap(
@@ -604,28 +602,6 @@ class _DashboardPageState extends State<DashboardPage> {
       ),
     );
   }
-}
-
-class _StatData {
-  const _StatData({
-    required this.color,
-    required this.icon,
-    required this.value,
-    required this.unit,
-    required this.title,
-    this.trendText,
-    this.trendPositive = true,
-    // ADDED: The onTap callback
-    this.onTap,
-  });
-  final Color color;
-  final IconData icon;
-  final String value;
-  final String unit;
-  final String title;
-  final String? trendText;
-  final bool trendPositive;
-  final VoidCallback? onTap; // Added a nullable VoidCallback
 }
 
 class _SectionHeader extends StatelessWidget {
@@ -655,8 +631,8 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _StatCard extends StatelessWidget {
-  const _StatCard({
+class _StatData {
+  const _StatData({
     required this.color,
     required this.icon,
     required this.value,
@@ -664,7 +640,6 @@ class _StatCard extends StatelessWidget {
     required this.title,
     this.trendText,
     this.trendPositive = true,
-    // ADDED: The onTap callback
     this.onTap,
   });
   final Color color;
@@ -674,13 +649,33 @@ class _StatCard extends StatelessWidget {
   final String title;
   final String? trendText;
   final bool trendPositive;
-  final VoidCallback? onTap; // Accept a nullable VoidCallback
+  final VoidCallback? onTap;
+}
+
+class _StatCard extends StatelessWidget {
+  const _StatCard({
+    required this.color,
+    required this.icon,
+    required this.value,
+    required this.unit,
+    required this.title,
+    this.trendText,
+    this.trendPositive = true,
+    this.onTap,
+  });
+  final Color color;
+  final IconData icon;
+  final String value;
+  final String unit;
+  final String title;
+  final String? trendText;
+  final bool trendPositive;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    // WRAPPED: The Card with an InkWell for tap functionality
     return InkWell(
-      onTap: onTap, // Assign the onTap callback
+      onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Card(
         elevation: 2,

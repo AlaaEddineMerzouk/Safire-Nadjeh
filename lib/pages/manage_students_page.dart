@@ -34,9 +34,9 @@ class _ManageStudentsPageState extends State<ManageStudentsPage> {
   }
 
   void _showDeleteConfirmation(
-      BuildContext context, String docId, String studentName) {
+      BuildContext parentContext, String docId, String studentName) {
     showDialog(
-      context: context,
+      context: parentContext,
       builder: (context) {
         return AlertDialog(
           backgroundColor: AppColors.backgroundLight,
@@ -58,14 +58,26 @@ class _ManageStudentsPageState extends State<ManageStudentsPage> {
             ),
             ElevatedButton(
               onPressed: () async {
-                await FirebaseFirestore.instance
-                    .collection('students')
-                    .doc(docId)
-                    .delete();
+                // Dismiss the AlertDialog first
                 Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Student $studentName deleted.')),
-                );
+
+                try {
+                  // Delete the student document
+                  await FirebaseFirestore.instance
+                      .collection('students')
+                      .doc(docId)
+                      .delete();
+
+                  // Show the SnackBar using the parent context
+                  ScaffoldMessenger.of(parentContext).showSnackBar(
+                    SnackBar(content: Text('Student $studentName deleted.')),
+                  );
+                } catch (e) {
+                  // Show an error SnackBar
+                  ScaffoldMessenger.of(parentContext).showSnackBar(
+                    SnackBar(content: Text('Failed to delete student: $e')),
+                  );
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.red,

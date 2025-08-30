@@ -1,27 +1,30 @@
 // 📁 lib/widgets/teacher_card.dart
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/app_colors.dart';
 
 class TeacherCard extends StatelessWidget {
   final String fullName;
-  final String subject;
-  final int totalSessions;
-  final double totalEarnings;
+  final List<String> groupIds;
+  final double percentage;
+  final double pendingEarnings;
+  final int totalStudentsPaidFor;
+  final double remainingBalance;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
-  final VoidCallback onRecordSession;
   final VoidCallback onPay;
-  final VoidCallback onTap; // New callback for navigating to history
+  final VoidCallback onTap;
 
   const TeacherCard({
     Key? key,
     required this.fullName,
-    required this.subject,
-    required this.totalSessions,
-    required this.totalEarnings,
+    required this.groupIds,
+    required this.percentage,
+    required this.pendingEarnings,
+    required this.totalStudentsPaidFor,
+    required this.remainingBalance,
     required this.onEdit,
     required this.onDelete,
-    required this.onRecordSession,
     required this.onPay,
     required this.onTap,
   }) : super(key: key);
@@ -33,14 +36,13 @@ class TeacherCard extends StatelessWidget {
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: InkWell(
-        onTap: onTap, // Call the new onTap function to navigate
+        onTap: onTap,
         borderRadius: BorderRadius.circular(15),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Teacher Name and Subject
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -48,36 +50,42 @@ class TeacherCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          fullName,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
+                        Text(fullName,
+                            style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary)),
                         const SizedBox(height: 4),
-                        Text(
-                          subject,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: AppColors.textSecondary,
-                            fontStyle: FontStyle.italic,
-                          ),
+                        FutureBuilder<List<String>>(
+                          future: _getGroupNames(),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const SizedBox(
+                                  height: 10,
+                                  width: 10,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2));
+                            }
+                            if (snapshot.hasError) {
+                              return const Text('Error loading groups',
+                                  style: TextStyle(
+                                      color: AppColors.red, fontSize: 12));
+                            }
+                            final groupNames = snapshot.data ?? [];
+                            return Text('Groups: ${groupNames.join(', ')}',
+                                style: const TextStyle(
+                                    fontSize: 14,
+                                    color: AppColors.textSecondary,
+                                    fontStyle: FontStyle.italic));
+                          },
                         ),
                       ],
                     ),
                   ),
-                  // Action Buttons
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      IconButton(
-                        onPressed: onRecordSession,
-                        icon: const Icon(Icons.add_circle_outline_rounded,
-                            color: AppColors.primaryBlue),
-                        tooltip: 'Record Session',
-                      ),
                       IconButton(
                         onPressed: onEdit,
                         icon: const Icon(Icons.edit_rounded,
@@ -95,25 +103,35 @@ class TeacherCard extends StatelessWidget {
                 ],
               ),
               const Divider(height: 24, thickness: 1),
-              // Sessions and Earnings
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: _buildMetric('Total Sessions',
-                        totalSessions.toString(), Icons.school_rounded),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: _buildMetric(
-                        'Total Earnings',
-                        '\$${totalEarnings.toStringAsFixed(2)}',
-                        Icons.payments_rounded),
-                  ),
-                ],
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Percentage: ${percentage.toStringAsFixed(1)}%',
+                        style: const TextStyle(
+                            fontSize: 14, color: AppColors.textPrimary)),
+                    const SizedBox(height: 4),
+                    Text('Total Students: $totalStudentsPaidFor',
+                        style: const TextStyle(
+                            fontSize: 14, color: AppColors.textPrimary)),
+                    const SizedBox(height: 4),
+                    Text(
+                        'Pending Earnings: \$${pendingEarnings.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.green)),
+                    const SizedBox(height: 4),
+                    Text(
+                        'Remaining Balance: \$${remainingBalance.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.red)),
+                  ],
+                ),
               ),
-              const SizedBox(height: 12),
-              // Pay Button
               Center(
                 child: ElevatedButton.icon(
                   onPressed: onPay,
@@ -124,8 +142,7 @@ class TeacherCard extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primaryBlue,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                        borderRadius: BorderRadius.circular(10)),
                     padding: const EdgeInsets.symmetric(
                         horizontal: 20, vertical: 12),
                   ),
@@ -138,34 +155,13 @@ class TeacherCard extends StatelessWidget {
     );
   }
 
-  Widget _buildMetric(String title, String value, IconData icon) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 16, color: AppColors.textSecondary),
-            const SizedBox(width: 4),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
-          ),
-        ),
-      ],
-    );
+  Future<List<String>> _getGroupNames() async {
+    if (groupIds.isEmpty) return ['No Groups Assigned'];
+    final futures = groupIds.map(
+        (id) => FirebaseFirestore.instance.collection('groups').doc(id).get());
+    final snapshots = await Future.wait(futures);
+    return snapshots
+        .map((doc) => (doc.data()?['groupName'] as String?) ?? 'N/A')
+        .toList();
   }
 }

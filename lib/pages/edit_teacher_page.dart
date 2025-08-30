@@ -1,6 +1,8 @@
+// 📁 lib/pages/edit_teacher_page.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/app_colors.dart';
+import 'dart:developer';
 
 class EditTeacherPage extends StatefulWidget {
   final Map<String, dynamic> teacherData;
@@ -17,54 +19,177 @@ class EditTeacherPage extends StatefulWidget {
 class _EditTeacherPageState extends State<EditTeacherPage> {
   final _formKey = GlobalKey<FormState>();
   final _fullNameController = TextEditingController();
-  final _sessionPriceController = TextEditingController();
+  final _otherPercentageController = TextEditingController();
 
-  String? _selectedSubject;
-  late Future<QuerySnapshot> _subjectsFuture;
+  String? _selectedPercentage;
+  List<QueryDocumentSnapshot> _allGroups = [];
+  List<String> _selectedGroupIds = [];
+  List<String> _selectedGroupNames = [];
 
   @override
   void initState() {
     super.initState();
-    _fullNameController.text = widget.teacherData['fullName'] ?? '';
-    _sessionPriceController.text =
-        (widget.teacherData['sessionPrice'] ?? 0.0).toString();
-    _subjectsFuture = FirebaseFirestore.instance.collection('subjects').get();
+    // Initialize controllers and state with existing data
+    _fullNameController.text = widget.teacherData['fullName'] as String? ?? '';
+    final percentage = (widget.teacherData['percentage'] as num?)?.toInt();
+    if (percentage != null && [30, 40, 50, 60].contains(percentage)) {
+      _selectedPercentage = percentage.toString();
+    } else {
+      _selectedPercentage = 'Other';
+      _otherPercentageController.text = percentage?.toString() ?? '';
+    }
+
+    _fetchGroupsAndSetInitialSelection();
+  }
+
+  /// Fetches all groups from Firestore and sets the initial selected groups for the teacher.
+  Future<void> _fetchGroupsAndSetInitialSelection() async {
+    try {
+      final groupsSnapshot =
+          await FirebaseFirestore.instance.collection('groups').get();
+      setState(() {
+        _allGroups = groupsSnapshot.docs;
+      });
+
+      // Populate selected groups based on the teacher's existing data
+      final List<String> teacherGroupIds = List<String>.from(
+          widget.teacherData['groupIds'] as List<dynamic>? ?? []);
+      _selectedGroupIds.clear();
+      _selectedGroupNames.clear();
+
+      for (var group in _allGroups) {
+        if (teacherGroupIds.contains(group.id)) {
+          _selectedGroupIds.add(group.id);
+          _selectedGroupNames.add(
+              (group.data() as Map<String, dynamic>)['groupName'] as String);
+        }
+      }
+      log('Fetched ${_allGroups.length} groups and set initial selection.');
+    } catch (e) {
+      log('Error fetching groups: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Failed to load groups: $e'),
+              backgroundColor: AppColors.red),
+        );
+      }
+    }
   }
 
   @override
   void dispose() {
     _fullNameController.dispose();
-    _sessionPriceController.dispose();
+    _otherPercentageController.dispose();
     super.dispose();
   }
 
+  /// Validates the form and saves the changes to the teacher's document in Firestore.
   Future<void> _saveChanges() async {
     if (_formKey.currentState!.validate()) {
-      if (_selectedSubject == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select a subject')),
-        );
+      if (_selectedGroupIds.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please select at least one group.')),
+          );
+        }
         return;
       }
+
+      double percentage = 0.0;
+      if (_selectedPercentage == 'Other') {
+        percentage = double.tryParse(_otherPercentageController.text) ?? 0.0;
+      } else {
+        percentage = double.tryParse(_selectedPercentage ?? '0') ?? 0.0;
+      }
+
       try {
         await FirebaseFirestore.instance
             .collection('teachers')
             .doc(widget.docId)
             .update({
           'fullName': _fullNameController.text,
-          'subject': _selectedSubject,
-          'sessionPrice': double.tryParse(_sessionPriceController.text) ?? 0.0,
+          'groupIds': _selectedGroupIds,
+          'percentage': percentage,
         });
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Teacher updated successfully!')),
-        );
+        if (mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Teacher updated successfully!'),
+                backgroundColor: AppColors.green),
+          );
+        }
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update teacher: $e')),
-        );
+        log('Error updating teacher: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('Failed to update teacher: $e'),
+                backgroundColor: AppColors.red),
+          );
+        }
       }
     }
+  }
+
+  /// Shows a dialog for group selection.
+  void _showGroupSelectionDialog() {
+    final List<String> tempSelectedIds = List.from(_selectedGroupIds);
+    final List<String> tempSelectedNames = List.from(_selectedGroupNames);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateInDialog) {
+            return AlertDialog(
+              title: const Text('Select Groups'),
+              content: SingleChildScrollView(
+                child: ListBody(
+                  children: _allGroups.map((group) {
+                    final groupId = group.id;
+                    final groupName = (group.data()
+                        as Map<String, dynamic>)['groupName'] as String?;
+                    if (groupName == null) return const SizedBox.shrink();
+                    final isSelected = tempSelectedIds.contains(groupId);
+                    return CheckboxListTile(
+                      title: Text(groupName),
+                      value: isSelected,
+                      onChanged: (bool? value) {
+                        setStateInDialog(() {
+                          if (value == true) {
+                            if (!tempSelectedIds.contains(groupId)) {
+                              tempSelectedIds.add(groupId);
+                              tempSelectedNames.add(groupName);
+                            }
+                          } else {
+                            tempSelectedIds.remove(groupId);
+                            tempSelectedNames.remove(groupName);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _selectedGroupIds = tempSelectedIds;
+                      _selectedGroupNames = tempSelectedNames;
+                    });
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Done'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -111,102 +236,80 @@ class _EditTeacherPageState extends State<EditTeacherPage> {
                       value!.isEmpty ? 'Please enter a name' : null,
                 ),
                 const SizedBox(height: 16),
-                FutureBuilder<QuerySnapshot>(
-                  future: _subjectsFuture,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (snapshot.hasError) {
-                      return const Text('Error loading subjects.');
-                    }
-                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                      return const Text(
-                          'No subjects available. Add one first.');
-                    }
-
-                    final subjects = snapshot.data!.docs;
-                    final List<String> subjectNames =
-                        subjects.map((doc) => doc['name'] as String).toList();
-
-                    // FIX: Conditionally set the dropdown value.
-                    // This prevents the exception if the teacher's subject
-                    // doesn't exist in the fetched list of subjects.
-                    final initialSubject =
-                        widget.teacherData['subject'] as String?;
-                    if (_selectedSubject == null &&
-                        initialSubject != null &&
-                        subjectNames.contains(initialSubject)) {
-                      _selectedSubject = initialSubject;
-                    }
-
-                    return DropdownButtonFormField<String>(
-                      value: _selectedSubject,
-                      hint: const Text('Select a Subject'),
-                      items: subjectNames.map((subjectName) {
-                        return DropdownMenuItem<String>(
-                          value: subjectName,
-                          child: Text(subjectName),
-                        );
-                      }).toList(),
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          _selectedSubject = newValue;
-                        });
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'Subject',
-                        labelStyle:
-                            const TextStyle(color: AppColors.textSecondary),
-                        prefixIcon:
-                            const Icon(Icons.class_, color: AppColors.primary),
-                        filled: true,
-                        fillColor: AppColors.inputFill,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                              color: AppColors.primary, width: 2),
-                        ),
-                      ),
-                      validator: (value) =>
-                          value == null ? 'Please select a subject' : null,
+                DropdownButtonFormField<String>(
+                  value: _selectedPercentage,
+                  hint: const Text('Select a percentage'),
+                  dropdownColor: AppColors.cardBackground,
+                  items: ['30', '40', '50', '60', 'Other'].map((perc) {
+                    return DropdownMenuItem<String>(
+                      value: perc,
+                      child: Text('$perc%'),
                     );
+                  }).toList(),
+                  onChanged: (String? newValue) {
+                    setState(() {
+                      _selectedPercentage = newValue;
+                    });
                   },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _sessionPriceController,
-                  style: const TextStyle(color: AppColors.textPrimary),
                   decoration: InputDecoration(
-                    labelText: 'Price per Session',
+                    labelText: 'Percentage',
                     labelStyle: const TextStyle(color: AppColors.textSecondary),
-                    prefixIcon: const Icon(Icons.attach_money,
-                        color: AppColors.primary),
+                    prefixIcon:
+                        const Icon(Icons.percent, color: AppColors.primary),
                     filled: true,
                     fillColor: AppColors.inputFill,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide:
-                          const BorderSide(color: AppColors.primary, width: 2),
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none),
+                  ),
+                  validator: (value) =>
+                      value == null ? 'Please select a percentage' : null,
+                ),
+                if (_selectedPercentage == 'Other')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: TextFormField(
+                      controller: _otherPercentageController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Enter Custom Percentage',
+                        prefixIcon:
+                            const Icon(Icons.percent, color: AppColors.primary),
+                        filled: true,
+                        fillColor: AppColors.inputFill,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none),
+                      ),
+                      validator: (value) {
+                        if (value == null ||
+                            value.isEmpty ||
+                            double.tryParse(value) == null) {
+                          return 'Please enter a valid number';
+                        }
+                        return null;
+                      },
                     ),
                   ),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value == null ||
-                        value.isEmpty ||
-                        double.tryParse(value) == null) {
-                      return 'Please enter a valid price';
-                    }
-                    return null;
-                  },
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: _showGroupSelectionDialog,
+                  icon: const Icon(Icons.group_add, color: Colors.white),
+                  label: const Text('Select Groups',
+                      style: TextStyle(color: Colors.white)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Selected Groups: ${_selectedGroupNames.join(', ')}',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontStyle: FontStyle.italic),
                 ),
                 const SizedBox(height: 32),
                 ElevatedButton(
@@ -216,8 +319,7 @@ class _EditTeacherPageState extends State<EditTeacherPage> {
                     foregroundColor: AppColors.textOnPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   child: const Text('Save Changes',
                       style: TextStyle(fontSize: 16)),

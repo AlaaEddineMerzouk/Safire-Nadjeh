@@ -7,7 +7,7 @@ import 'package:privateecole/widgets/subscription_filter_bar.dart';
 import 'package:privateecole/pages/add_subscription_page.dart';
 import 'package:privateecole/pages/edit_subscription_page.dart';
 import 'package:privateecole/pages/renew_subscription_page.dart';
-import 'package:privateecole/pages/subscription_history_page.dart'; // Import the new page
+import 'package:privateecole/pages/subscription_history_page.dart';
 
 class SubscriptionsPage extends StatefulWidget {
   final String? initialStatus;
@@ -20,19 +20,19 @@ class SubscriptionsPage extends StatefulWidget {
 
 class _SubscriptionsPageState extends State<SubscriptionsPage> {
   String _searchQuery = '';
-  late String
-      _filterStatus; // Use 'late' because it will be initialized in initState
+  late String _filterStatus;
   String _sortCriterion = 'Payment Date';
   bool _isDescending = true;
 
   Map<String, String> _groupsMap = {};
+  Map<String, String> _studentsMap = {};
 
   @override
   void initState() {
     super.initState();
-    // Use the initialStatus from the widget if it's not null, otherwise default to 'All'
     _filterStatus = widget.initialStatus ?? 'All';
     _fetchGroups();
+    _fetchStudents();
   }
 
   Future<void> _fetchGroups() async {
@@ -46,6 +46,21 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
     if (mounted) {
       setState(() {
         _groupsMap = groups;
+      });
+    }
+  }
+
+  Future<void> _fetchStudents() async {
+    final studentsSnapshot =
+        await FirebaseFirestore.instance.collection('students').get();
+    final Map<String, String> students = {};
+    for (var doc in studentsSnapshot.docs) {
+      students[doc.id] = doc.data()['studentName'] as String;
+    }
+
+    if (mounted) {
+      setState(() {
+        _studentsMap = students;
       });
     }
   }
@@ -66,20 +81,14 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
   Stream<QuerySnapshot> _getSubscriptionsStream() {
     Query query = FirebaseFirestore.instance.collection('subscriptions');
 
-    if (_filterStatus != 'All') {
-      query = query.where('status', isEqualTo: _filterStatus);
-    }
-
+    // Sort based on selected criterion for fields that exist on the document.
+    // 'Name' and 'Group' are sorted locally.
     if (_sortCriterion == 'Payment Date') {
       query = query.orderBy('paymentDate', descending: _isDescending);
     } else if (_sortCriterion == 'Price') {
       query = query.orderBy('price', descending: _isDescending);
-    } else if (_sortCriterion == 'Name') {
-      query = query.orderBy('studentName', descending: _isDescending);
     } else if (_sortCriterion == 'End Date') {
       query = query.orderBy('endDate', descending: _isDescending);
-    } else if (_sortCriterion == 'Group') {
-      // Local sorting is handled after fetching the data
     }
 
     return query.snapshots();
@@ -178,28 +187,69 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
                 }
 
                 final allDocs = snapshot.data!.docs;
+                final now = DateTime.now();
 
+                // Local filtering based on search query and calculated status
                 final filteredDocs = allDocs.where((doc) {
                   final data = doc.data() as Map<String, dynamic>;
                   final studentName =
-                      data['studentName']?.toString().toLowerCase() ?? '';
-                  final groupName =
-                      _groupsMap[data['groupId']]?.toLowerCase() ?? '';
-                  return studentName.contains(_searchQuery.toLowerCase()) ||
-                      groupName.contains(_searchQuery.toLowerCase());
+                      _studentsMap[data['studentId']]?.toLowerCase() ?? '';
+                  final groupNames = (data['groupIds'] as List<dynamic>?)
+                          ?.map((id) => _groupsMap[id]?.toLowerCase() ?? '')
+                          .join(' ')
+                          .trim() ??
+                      '';
+                  final endDate = (data['endDate'] as Timestamp?)?.toDate();
+
+                  String calculatedStatus = 'Unknown';
+                  if (endDate != null) {
+                    if (endDate.isBefore(now)) {
+                      calculatedStatus = 'Expired';
+                    } else {
+                      calculatedStatus = 'Active';
+                    }
+                  }
+
+                  final matchesSearch =
+                      studentName.contains(_searchQuery.toLowerCase()) ||
+                          groupNames.contains(_searchQuery.toLowerCase());
+
+                  final matchesFilter = _filterStatus == 'All' ||
+                      calculatedStatus == _filterStatus;
+
+                  return matchesSearch && matchesFilter;
                 }).toList();
 
+                // Local sorting for 'Group' and 'Name'
                 if (_sortCriterion == 'Group') {
                   filteredDocs.sort((a, b) {
-                    final groupNameA = _groupsMap[
-                            (a.data() as Map<String, dynamic>)['groupId']] ??
+                    final groupIdsA =
+                        (a.data() as Map<String, dynamic>)['groupIds']
+                                as List<dynamic>? ??
+                            [];
+                    final groupNamesA =
+                        groupIdsA.map((id) => _groupsMap[id] ?? '').join(' ');
+                    final groupIdsB =
+                        (b.data() as Map<String, dynamic>)['groupIds']
+                                as List<dynamic>? ??
+                            [];
+                    final groupNamesB =
+                        groupIdsB.map((id) => _groupsMap[id] ?? '').join(' ');
+                    return _isDescending
+                        ? groupNamesB.compareTo(groupNamesA)
+                        : groupNamesA.compareTo(groupNamesB);
+                  });
+                } else if (_sortCriterion == 'Name') {
+                  filteredDocs.sort((a, b) {
+                    final studentNameA = _studentsMap[
+                            (a.data() as Map<String, dynamic>)['studentId']] ??
                         '';
-                    final groupNameB = _groupsMap[
-                            (b.data() as Map<String, dynamic>)['groupId']] ??
+                    final studentNameB = _studentsMap[
+                            (b.data() as Map<String, dynamic>)['studentId']] ??
                         '';
                     return _isDescending
-                        ? groupNameB.compareTo(groupNameA)
-                        : groupNameA.compareTo(groupNameB);
+                        ? studentNameB.compareTo(studentNameA)
+                        : studentNameA.compareTo(studentNameB);
                   });
                 }
 
@@ -219,36 +269,43 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
                   itemBuilder: (context, index) {
                     final sub = filteredDocs[index];
                     final data = sub.data() as Map<String, dynamic>;
-
                     final endDate = (data['endDate'] as Timestamp?)?.toDate();
-                    final hasExpired = endDate != null
-                        ? endDate.isBefore(DateTime.now())
-                        : false;
+                    final now = DateTime.now();
 
-                    // Check if subscription is expiring soon (within 7 days)
-                    final isExpiringSoon = endDate != null
-                        ? endDate.difference(DateTime.now()).inDays <= 7 &&
-                            endDate.difference(DateTime.now()).inDays >= 0
-                        : false;
+                    String calculatedStatus = 'Unknown';
+                    if (endDate != null) {
+                      if (endDate.isBefore(now)) {
+                        calculatedStatus = 'Expired';
+                      } else {
+                        calculatedStatus = 'Active';
+                      }
+                    }
+
+                    // Get group names from group IDs
+                    final groupIds = data['groupIds'] as List<dynamic>? ?? [];
+                    final groupNames = groupIds
+                        .map((id) => _groupsMap[id] ?? 'N/A')
+                        .join(', ');
 
                     return FutureBuilder<bool>(
-                      future: hasExpired
+                      future: calculatedStatus == 'Expired'
                           ? _hasPresentAfterExpired(data['studentId'], endDate!)
                           : Future.value(false),
                       builder: (context, snapshot) {
                         final hasPresentAfterExpired = snapshot.data ?? false;
 
                         return SubscriptionCard(
-                          studentName: data['studentName'] ?? '',
+                          studentId: data['studentId'],
                           price: (data['price'] ?? 0).toDouble(),
-                          status: data['status'] ?? 'Unknown',
+                          status: calculatedStatus,
                           paymentDate:
                               (data['paymentDate'] as Timestamp?)?.toDate(),
                           endDate: endDate,
-                          group: _groupsMap[data['groupId']] ?? 'N/A',
-                          hasExpired: hasExpired,
+                          group: groupNames,
+                          hasExpired: calculatedStatus == 'Expired',
                           hasPresentAfterExpired: hasPresentAfterExpired,
-                          isExpiringSoon: isExpiringSoon,
+                          isExpiringSoon:
+                              false, // Set to false since it's not a displayed status
                           onEdit: () {
                             Navigator.push(
                               context,
@@ -263,9 +320,7 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
                           onDelete: () {
                             _showDeleteConfirmation(context, sub.id);
                           },
-                          // Conditionally show the renew button by passing null
-                          // when the status is not 'Expired'
-                          onRenew: data['status'] == 'Expired'
+                          onRenew: calculatedStatus == 'Expired'
                               ? () {
                                   Navigator.push(
                                     context,
@@ -279,14 +334,15 @@ class _SubscriptionsPageState extends State<SubscriptionsPage> {
                                   );
                                 }
                               : null,
-                          // Add the onTap handler to navigate to the history page
                           onTap: () {
+                            final studentName =
+                                _studentsMap[data['studentId']] ?? 'N/A';
                             Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (context) => SubscriptionHistoryPage(
                                   subscriptionDocId: sub.id,
-                                  studentName: data['studentName'] ?? 'N/A',
+                                  studentName: studentName,
                                 ),
                               ),
                             );

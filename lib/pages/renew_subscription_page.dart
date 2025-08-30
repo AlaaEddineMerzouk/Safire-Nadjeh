@@ -21,63 +21,90 @@ class RenewSubscriptionPage extends StatefulWidget {
 class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
   final _formKey = GlobalKey<FormState>();
   final _priceController = TextEditingController();
-  // Removed _sessionsController as per user request
 
   DateTime _newPaymentDate = DateTime.now();
   DateTime _newEndDate = DateTime.now().add(const Duration(days: 30));
 
   bool _isLoading = false;
-  String? _groupName;
+  String _groupNames = 'Loading...';
+  String _studentName = 'Loading...';
 
   @override
   void initState() {
     super.initState();
-    // Initialize controllers with existing data
     _priceController.text = widget.subscriptionData['price']?.toString() ?? '';
-    // Removed _sessionsController initialization
-
-    // Asynchronously fetch the group name using the groupId
-    _fetchGroupName();
+    _fetchGroupNames();
+    _fetchStudentName();
   }
 
   @override
   void dispose() {
     _priceController.dispose();
-    // Removed _sessionsController disposal
     super.dispose();
   }
 
-  /// Fetches the group name from Firestore using the groupId.
-  Future<void> _fetchGroupName() async {
-    final groupId = widget.subscriptionData['groupId'];
-    if (groupId != null) {
+  /// Fetches the student's name from Firestore using the studentId.
+  Future<void> _fetchStudentName() async {
+    final studentId = widget.subscriptionData['studentId'];
+    if (studentId != null) {
       try {
-        final groupDoc = await FirebaseFirestore.instance
-            .collection('groups')
-            .doc(groupId)
+        final studentDoc = await FirebaseFirestore.instance
+            .collection('students')
+            .doc(studentId)
             .get();
-        if (groupDoc.exists) {
+        if (studentDoc.exists && studentDoc.data() != null) {
           setState(() {
-            _groupName = groupDoc.data()?['groupName'] ?? 'Not specified';
+            _studentName = studentDoc.data()!['studentName'] ?? 'Not specified';
           });
         } else {
-          // Handle case where group document does not exist
           setState(() {
-            _groupName = 'Not specified';
+            _studentName = 'Not specified';
           });
         }
       } catch (e) {
-        // Handle potential errors during fetching
         setState(() {
-          _groupName = 'Error fetching group name';
+          _studentName = 'Error fetching student name';
         });
-        print('Error fetching group name: $e');
+        print('Error fetching student name: $e');
       }
     } else {
-      // Handle case where no groupId is present in the subscription
       setState(() {
-        _groupName = 'Not specified';
+        _studentName = 'Not specified';
       });
+    }
+  }
+
+  /// Fetches the group names from Firestore using the list of groupIds.
+  Future<void> _fetchGroupNames() async {
+    final groupIds =
+        widget.subscriptionData['groupIds'] as List<dynamic>? ?? [];
+    if (groupIds.isNotEmpty) {
+      try {
+        final groupDocs = await Future.wait(groupIds.map((id) =>
+            FirebaseFirestore.instance.collection('groups').doc(id).get()));
+        final names = groupDocs
+            .where((doc) => doc.exists && doc.data()?['groupName'] != null)
+            .map((doc) => doc.data()!['groupName'] as String)
+            .toList();
+
+        if (mounted) {
+          setState(() {
+            _groupNames = names.isNotEmpty ? names.join(', ') : 'Not specified';
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _groupNames = 'Error fetching group names';
+          });
+        }
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _groupNames = 'Not specified';
+        });
+      }
     }
   }
 
@@ -165,8 +192,11 @@ class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
         'price': oldSubscriptionData['price'],
         'paymentDate': oldSubscriptionData['paymentDate'],
         'endDate': oldSubscriptionData['endDate'],
-        'numberOfSessions': oldSubscriptionData['numberOfSessions'],
         'firstLessonDate': oldSubscriptionData['firstLessonDate'],
+        'groupIds': oldSubscriptionData['groupIds'],
+        'hasExpired': oldSubscriptionData['hasExpired'] ?? false,
+        'hasPresentAfterExpired':
+            oldSubscriptionData['hasPresentAfterExpired'] ?? false,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -175,29 +205,34 @@ class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
         'price': double.tryParse(_priceController.text),
         'paymentDate': Timestamp.fromDate(_newPaymentDate),
         'endDate': Timestamp.fromDate(_newEndDate),
-        // Removed 'numberOfSessions' from the update
-        'status': 'Active',
+        'hasExpired': false, // Renewed subscriptions are not expired
+        'hasPresentAfterExpired': false, // A new subscription starts fresh
       });
 
       // Show success message and navigate back
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Subscription renewed successfully!'),
-            backgroundColor: AppColors.green),
-      );
-
-      Navigator.of(context).pop();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Subscription renewed successfully!'),
+              backgroundColor: AppColors.green),
+        );
+        Navigator.of(context).pop();
+      }
     } catch (e) {
       // Show error message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Failed to renew subscription: $e'),
-            backgroundColor: AppColors.red),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Failed to renew subscription: $e'),
+              backgroundColor: AppColors.red),
+        );
+      }
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -222,9 +257,6 @@ class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     );
 
-    final subjects =
-        List<String>.from(widget.subscriptionData['subjects'] ?? []);
-
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
       appBar: AppBar(
@@ -246,7 +278,7 @@ class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Student: ${widget.subscriptionData['studentName'] ?? 'Not specified'}',
+                  'Student: $_studentName',
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -255,22 +287,12 @@ class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Group: ${_groupName ?? 'Loading...'}',
+                  'Group(s): $_groupNames',
                   style: const TextStyle(
                     fontSize: 16,
                     color: AppColors.textSecondary,
                   ),
                 ),
-                const SizedBox(height: 8),
-                // Displaying the subjects here
-                if (subjects.isNotEmpty)
-                  Text(
-                    'Subjects: ${subjects.join(', ')}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
                 const SizedBox(height: 24),
                 // New Price field
                 TextFormField(
@@ -291,7 +313,6 @@ class _RenewSubscriptionPageState extends State<RenewSubscriptionPage> {
                   },
                 ),
                 const SizedBox(height: 16),
-                // Removed the Number of Sessions field
                 // New Payment Date field
                 _buildDateField(
                   "New Payment Date",

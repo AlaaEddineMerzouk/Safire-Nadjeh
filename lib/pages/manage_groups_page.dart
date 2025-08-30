@@ -23,7 +23,7 @@ class _ManageGroupsPageState extends State<ManageGroupsPage> {
   void _showDeleteConfirmation(BuildContext context, String groupId) {
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           backgroundColor: AppColors.backgroundLight,
           title: const Text('Confirm Deletion',
@@ -33,35 +33,48 @@ class _ManageGroupsPageState extends State<ManageGroupsPage> {
               style: TextStyle(color: AppColors.textSecondary)),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('Cancel',
                   style: TextStyle(color: AppColors.textSecondary)),
             ),
             ElevatedButton(
               onPressed: () async {
-                final subscriptionsSnapshot = await FirebaseFirestore.instance
-                    .collection('subscriptions')
-                    .where('groupId', isEqualTo: groupId)
-                    .get();
+                // Dismiss the AlertDialog first
+                Navigator.of(dialogContext).pop();
 
-                final batch = FirebaseFirestore.instance.batch();
+                try {
+                  final subscriptionsSnapshot = await FirebaseFirestore.instance
+                      .collection('subscriptions')
+                      .where('groupId', isEqualTo: groupId)
+                      .get();
 
-                for (var doc in subscriptionsSnapshot.docs) {
-                  batch.delete(doc.reference);
+                  final batch = FirebaseFirestore.instance.batch();
+
+                  for (var doc in subscriptionsSnapshot.docs) {
+                    batch.delete(doc.reference);
+                  }
+
+                  batch.delete(FirebaseFirestore.instance
+                      .collection('groups')
+                      .doc(groupId));
+
+                  await batch.commit();
+
+                  // Safely show the SnackBar using the main page's context
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text(
+                              'Group and subscriptions deleted successfully!')),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to delete group: $e')),
+                    );
+                  }
                 }
-
-                batch.delete(FirebaseFirestore.instance
-                    .collection('groups')
-                    .doc(groupId));
-
-                await batch.commit();
-
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text(
-                          'Group and subscriptions deleted successfully!')),
-                );
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.red,
@@ -158,8 +171,7 @@ class _ManageGroupsPageState extends State<ManageGroupsPage> {
                     final doc = filteredDocs[index];
                     final data = doc.data() as Map<String, dynamic>;
 
-                    final teacherId =
-                        data['teacherId'] as String?; // Safely get teacherId
+                    final teacherId = data['teacherId'] as String?;
 
                     return Card(
                       margin: const EdgeInsets.symmetric(
@@ -192,15 +204,12 @@ class _ManageGroupsPageState extends State<ManageGroupsPage> {
                                     final teacherName = teacherSnapshot
                                             .data!['fullName'] as String? ??
                                         'Unknown Teacher';
-                                    return Text(
-                                        'Teacher: $teacherName\nSubjects: ${(data['subjects'] as List? ?? []).join(', ')}');
+                                    return Text('Teacher: $teacherName');
                                   }
-                                  return Text(
-                                      'Teacher: Unknown\nSubjects: ${(data['subjects'] as List? ?? []).join(', ')}');
+                                  return const Text('Teacher: Unknown');
                                 },
                               )
-                            : Text(
-                                'Teacher: Not Assigned\nSubjects: ${(data['subjects'] as List? ?? []).join(', ')}'),
+                            : const Text('Teacher: Not Assigned'),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [

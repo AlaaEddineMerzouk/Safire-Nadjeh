@@ -53,7 +53,12 @@ class TeacherFilterBar extends StatelessWidget {
                   value: sortCriterion,
                   dropdownColor: AppColors.cardBackground,
                   isExpanded: true,
-                  items: ['Name', 'Subject', 'Total Sessions', 'Total Earnings']
+                  // The list of items has been updated here
+                  items: [
+                    'Name',
+                    'Remaining Balance',
+                    'Last Payment Date',
+                  ]
                       .map((criterion) => DropdownMenuItem(
                             value: criterion,
                             child: Text(criterion,

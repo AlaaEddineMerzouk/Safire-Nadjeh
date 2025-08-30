@@ -1,10 +1,11 @@
 // 📁 lib/widgets/subscription_card.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/app_colors.dart';
 
 class SubscriptionCard extends StatelessWidget {
-  final String studentName;
+  final String studentId;
   final double price;
   final String status;
   final DateTime? paymentDate;
@@ -12,16 +13,15 @@ class SubscriptionCard extends StatelessWidget {
   final String group;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
-  // New fields to be passed from the parent widget
   final bool hasExpired;
   final bool hasPresentAfterExpired;
   final bool isExpiringSoon;
-  final VoidCallback? onRenew; // Made optional
+  final VoidCallback? onRenew;
   final VoidCallback onTap;
 
   const SubscriptionCard({
     Key? key,
-    required this.studentName,
+    required this.studentId,
     required this.price,
     required this.status,
     required this.paymentDate,
@@ -32,9 +32,24 @@ class SubscriptionCard extends StatelessWidget {
     required this.hasExpired,
     required this.hasPresentAfterExpired,
     required this.isExpiringSoon,
-    this.onRenew, // No longer required
+    this.onRenew,
     required this.onTap,
   }) : super(key: key);
+
+  Future<String> _getStudentName() async {
+    try {
+      final docSnapshot = await FirebaseFirestore.instance
+          .collection('students')
+          .doc(studentId)
+          .get();
+      if (docSnapshot.exists) {
+        return docSnapshot['studentName'] as String;
+      }
+      return 'Student not found';
+    } catch (e) {
+      return 'Error fetching name';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,14 +74,40 @@ class SubscriptionCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Expanded(
-                    child: Text(
-                      studentName,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                    child: FutureBuilder<String>(
+                      future: _getStudentName(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Text(
+                            'Loading...',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          );
+                        }
+                        if (snapshot.hasError) {
+                          return const Text(
+                            'Error',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          );
+                        }
+                        return Text(
+                          snapshot.data ?? 'No Name',
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        );
+                      },
                     ),
                   ),
                   Container(
@@ -143,7 +184,6 @@ class SubscriptionCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  // Conditionally show the Renew button only if onRenew is not null
                   if (onRenew != null)
                     IconButton(
                       icon: const Icon(Icons.autorenew, color: AppColors.green),

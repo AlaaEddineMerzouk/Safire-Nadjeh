@@ -20,43 +20,26 @@ class AppColors {
 class StatisticsPage extends StatelessWidget {
   const StatisticsPage({Key? key}) : super(key: key);
 
-  // Asynchronous function to calculate total revenue from subscriptions and renewals
+  // Optimized function to calculate total revenue from subscriptions and renewals
   Future<double> _calculateTotalRevenue() async {
     double totalRevenue = 0.0;
     try {
       final subscriptionsSnapshot =
           await FirebaseFirestore.instance.collection('subscriptions').get();
-
-      final renewalFutures = <Future<double>>[];
-
       for (var subscriptionDoc in subscriptionsSnapshot.docs) {
         final data = subscriptionDoc.data();
         if (data.containsKey('price')) {
           totalRevenue += (data['price'] as num).toDouble();
         }
-
-        renewalFutures.add(
-          FirebaseFirestore.instance
-              .collection('subscriptions')
-              .doc(subscriptionDoc.id)
-              .collection('renewals')
-              .get()
-              .then((renewalsSnapshot) {
-            double renewalPriceSum = 0.0;
-            for (var renewalDoc in renewalsSnapshot.docs) {
-              final renewalData = renewalDoc.data();
-              if (renewalData.containsKey('price')) {
-                renewalPriceSum += (renewalData['price'] as num).toDouble();
-              }
-            }
-            return renewalPriceSum;
-          }),
-        );
       }
 
-      final renewalTotals = await Future.wait(renewalFutures);
-      for (var total in renewalTotals) {
-        totalRevenue += total;
+      final renewalsSnapshot =
+          await FirebaseFirestore.instance.collectionGroup('renewals').get();
+      for (var renewalDoc in renewalsSnapshot.docs) {
+        final renewalData = renewalDoc.data();
+        if (renewalData.containsKey('price')) {
+          totalRevenue += (renewalData['price'] as num).toDouble();
+        }
       }
     } catch (e) {
       print("Error fetching total revenue: $e");
@@ -73,8 +56,8 @@ class StatisticsPage extends StatelessWidget {
 
       for (var paymentDoc in paymentsSnapshot.docs) {
         final data = paymentDoc.data();
-        if (data.containsKey('amount')) {
-          totalTeacherEarnings += (data['amount'] as num).toDouble();
+        if (data.containsKey('paidAmount')) {
+          totalTeacherEarnings += (data['paidAmount'] as num).toDouble();
         }
       }
     } catch (e) {
@@ -83,15 +66,13 @@ class StatisticsPage extends StatelessWidget {
     return totalTeacherEarnings;
   }
 
-  // UPDATED: Asynchronous function to calculate total expenses.
-  // Now counts all expenses with a 'Paid' status, regardless of their archived state.
+  // Asynchronous function to calculate total expenses.
   Future<double> _calculateTotalExpenses() async {
     double totalExpenses = 0.0;
     try {
       final expensesSnapshot = await FirebaseFirestore.instance
           .collection('expenses')
-          .where('status',
-              isEqualTo: 'Paid') // Now only filters by 'Paid' status
+          .where('status', isEqualTo: 'Paid')
           .get();
 
       for (var expenseDoc in expensesSnapshot.docs) {
@@ -128,7 +109,6 @@ class StatisticsPage extends StatelessWidget {
               const _SectionTitle(title: 'Live Subscription Status'),
               const SizedBox(height: 16.0),
 
-              // Single StreamBuilder to listen for all data from Firestore
               StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('subscriptions')
@@ -148,23 +128,21 @@ class StatisticsPage extends StatelessWidget {
                   final documents = snapshot.data!.docs;
                   int activeCount = 0;
                   int expiredCount = 0;
-                  int unknownCount = 0;
+                  int unknownCount = 0; // Correctly initialize and use this
                   final int totalMembers = documents.length;
+                  final now = DateTime.now();
 
+                  // CORRECTED: Calculate status dynamically based on endDate
                   for (var doc in documents) {
                     final data = doc.data() as Map<String, dynamic>;
-                    switch (data['status']) {
-                      case 'Active':
-                        activeCount++;
-                        break;
-                      case 'Expired':
-                        expiredCount++;
-                        break;
-                      case 'Unknown':
-                        unknownCount++;
-                        break;
-                      default:
-                        break;
+                    final endDate = (data['endDate'] as Timestamp?)?.toDate();
+
+                    if (endDate == null) {
+                      unknownCount++;
+                    } else if (endDate.isAfter(now)) {
+                      activeCount++;
+                    } else {
+                      expiredCount++;
                     }
                   }
 
@@ -177,7 +155,7 @@ class StatisticsPage extends StatelessWidget {
                           children: [
                             Expanded(
                               child: _CompactMetricCard(
-                                title: 'Total Members',
+                                title: 'Total subscriptions',
                                 value: totalMembers.toString(),
                                 icon: Icons.group_rounded,
                                 color: AppColors.primaryBlue,
@@ -231,7 +209,6 @@ class StatisticsPage extends StatelessWidget {
               const _SectionTitle(title: 'Financial Overview'),
               const SizedBox(height: 16.0),
 
-              // Use a single FutureBuilder to get all three financial metrics concurrently
               FutureBuilder<List<double>>(
                 future: Future.wait([
                   _calculateTotalRevenue(),
@@ -261,7 +238,6 @@ class StatisticsPage extends StatelessWidget {
 
                   return Column(
                     children: [
-                      // Card for Total Revenue
                       _CompactMetricCard(
                         title: 'Total Revenue',
                         value: '\$ ${totalRevenue.toStringAsFixed(2)}',
@@ -269,8 +245,6 @@ class StatisticsPage extends StatelessWidget {
                         color: AppColors.primaryOrange,
                       ),
                       const SizedBox(height: 16.0),
-
-                      // Card for Total Expenses
                       _CompactMetricCard(
                         title: 'Total Expenses',
                         value: '\$ ${totalExpenses.toStringAsFixed(2)}',
@@ -278,22 +252,19 @@ class StatisticsPage extends StatelessWidget {
                         color: AppColors.red,
                       ),
                       const SizedBox(height: 16.0),
-                      // Card for Total Earnings Paid to Teachers
                       _CompactMetricCard(
                         title: 'Total Earnings Paid to Teachers',
                         value: '\$ ${totalTeacherEarnings.toStringAsFixed(2)}',
                         icon: Icons.attach_money_rounded,
                         color: AppColors.purple,
                       ),
-
-                      // Card for Net Profit
+                      const SizedBox(height: 16.0),
                       _CompactMetricCard(
                         title: 'Net Profit',
                         value: '\$ ${netProfit.toStringAsFixed(2)}',
                         icon: Icons.account_balance_wallet_rounded,
                         color: AppColors.green,
                       ),
-                      const SizedBox(height: 16.0),
                     ],
                   );
                 },
